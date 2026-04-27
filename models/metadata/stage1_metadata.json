@@ -1,0 +1,18 @@
+{
+  "model_type": "HistGradientBoostingRegressor",
+  "n_train": 2392,
+  "n_test": 184,
+  "n_features": 34,
+  "n_oof_folds": 9,
+  "n_oof_rows": 1656,
+  "oof_metrics": {
+    "rmse": 4.110776133270379,
+    "mae": 2.9176676376816557,
+    "r2": 0.8345836929997625
+  },
+  "test_metrics": {
+    "rmse": 7.2591333833517675,
+    "mae": 5.097814012725415,
+    "r2": 0.8188722214145469
+  }
+}

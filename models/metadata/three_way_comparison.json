@@ -1,0 +1,50 @@
+{
+  "regression_metrics": {
+    "rmse": 7.2591333833517675,
+    "mae": 5.097814012725415,
+    "r2": 0.8188722214145469
+  },
+  "decision_comparison": {
+    "regression_only": {
+      "recall": 0.26,
+      "precision": 1.0,
+      "f1": 0.4126984126984127,
+      "accuracy": 0.7989130434782609,
+      "tp": 13,
+      "fp": 0,
+      "fn": 37,
+      "tn": 134,
+      "missed_high_risk_days": 37,
+      "false_alarms": 0
+    },
+    "old_parallel": {
+      "recall": 0.84,
+      "precision": 0.9545454545454546,
+      "f1": 0.8936170212765957,
+      "accuracy": 0.9456521739130435,
+      "tp": 42,
+      "fp": 2,
+      "fn": 8,
+      "tn": 132,
+      "missed_high_risk_days": 8,
+      "false_alarms": 2
+    },
+    "new_stacked": {
+      "recall": 0.88,
+      "precision": 0.8979591836734694,
+      "f1": 0.8888888888888888,
+      "accuracy": 0.9402173913043478,
+      "tp": 44,
+      "fp": 5,
+      "fn": 6,
+      "tn": 129,
+      "missed_high_risk_days": 6,
+      "false_alarms": 5
+    }
+  },
+  "grey_zone": {
+    "days_in_grey_zone": 39,
+    "rescued_by_classifier": 36,
+    "true_positives_rescued": 31
+  }
+}

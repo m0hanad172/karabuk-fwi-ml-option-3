@@ -22,10 +22,6 @@ build/
 # Data / outputs / models - avoid uploading large/generated files
 data/raw/
 data/interim/
-outputs/
-models/
-*.joblib
-*.pkl
 *.sqlite
 *.db
 
