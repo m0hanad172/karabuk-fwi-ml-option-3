@@ -22,6 +22,8 @@ build/
 # Data / outputs / models - avoid uploading large/generated files
 data/raw/
 data/interim/
+data/notifications/*.jsonl
+data/notifications/*.jpg
 *.sqlite
 *.db
 
