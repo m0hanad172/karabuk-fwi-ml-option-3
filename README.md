@@ -9,16 +9,14 @@ The repository contains:
 - a **FastAPI** backend with SQLite-backed run history and an
   APScheduler that fires two daily operational runs (11:00 / 15:00
   Europe/Istanbul);
-- a **Next.js 16 + React 19** dashboard with eight tabs (Overview,
-  Impact & Context, Risk Decision, Features, Analytics, Run History,
-  Monitoring, System);
+- a **Next.js 16 + React 19** dashboard with eight tabs;
 - a fully reproducible training pipeline (HistGradientBoosting +
-  RandomForest stacked) with all trained artefacts checked into the
+  RandomForest, stacked) with all trained artefacts checked into the
   repo;
-- an isolated **monitoring layer** that runs YOLOv8 fire detection on
+- an isolated **monitoring layer** running YOLOv8 fire detection on
   webcam / PC-camera / Tello drone feeds.
 
-> **All operational timestamps are Europe/Istanbul (TRT, +03:00).**
+> All operational timestamps are **Europe/Istanbul** (TRT, +03:00).
 
 ---
 
@@ -27,12 +25,14 @@ The repository contains:
 - [System workflow](#system-workflow)
 - [Project structure](#project-structure)
 - [Requirements](#requirements)
-- [For collaborators — clone to running in 5 steps](#for-collaborators--clone-to-running-in-5-steps)
-- [Backend — install, configure, run](#backend--install-configure-run)
-- [Frontend — install, configure, run](#frontend--install-configure-run)
+- [Collaborator quick start](#collaborator-quick-start)
+- [Backend setup](#backend-setup)
+- [Frontend setup](#frontend-setup)
+- [Database](#database)
 - [Model files](#model-files)
 - [Environment variables](#environment-variables)
 - [Tests](#tests)
+- [Docker / deployment](#docker--deployment)
 - [Common errors and fixes](#common-errors-and-fixes)
 - [Documentation index](#documentation-index)
 
@@ -45,21 +45,21 @@ The repository contains:
                               │
                               ▼
               ┌────────── Feature engineering ──────────┐
-              │  src/features/build_features.py         │
+              │  backend/src/features/build_features.py │
               │  → 34 engineered features (Group A/B/C) │
               └─────────────────────┬────────────────────┘
                                     ▼
                      Stage 1 — HistGradientBoostingRegressor
-                            (models/stage1/*.joblib)
+                          (backend/models/stage1/*.joblib)
                                     │  predicted_fwi
                                     ▼
                      Stage 2 — RandomForestClassifier
-                          (models/stage2/*.joblib)
+                          (backend/models/stage2/*.joblib)
                           inputs: predicted_fwi + rh + ws + fuel_drying_rate
                                     │  high_risk_probability
                                     ▼
                      Stacked decision rule
-                     (src/models/decision.py)
+                     (backend/src/models/decision.py)
                                     │
                                     ▼
               ┌────────────────────────────────────────────┐
@@ -80,48 +80,66 @@ from this prediction pipeline — it never writes `predicted_fwi` or
 ## Project structure
 
 ```
-.
-├── backend/                Marker folder + docs (see backend/README.md).
-│                           The actual backend code lives at the repo root in
-│                           src/, configs/, scripts/, tests/, models/, data/.
-│                           This is intentional — every Python import is
-│                           absolute (`from src.*`, `from configs.*`).
-├── frontend/               Next.js 16 dashboard (React 19, Tailwind v4)
+project-root/
+├── backend/                 FastAPI + ML + monitoring (Python)
+│   ├── src/                 Application code, imported as `src.*`
+│   │   ├── api/             FastAPI app, routes, services, DB layer
+│   │   ├── data/            Open-Meteo / soil-moisture fetchers
+│   │   ├── features/        Feature engineering + schema validators
+│   │   ├── models/          Stacked decision rule + Stage 1/2 trainers
+│   │   ├── inference/       StackedPredictor (production inference)
+│   │   ├── monitoring/      Cameras, drone, YOLO detector, notifications
+│   │   ├── pipeline/        Training pipeline, live inference, drone logic
+│   │   └── evaluation/      Walk-forward + metrics
+│   ├── configs/             paths.py, settings.py — imported as `configs.*`
+│   ├── scripts/             Entry points (serve, train, migrations)
+│   ├── tests/               Pytest suite (83 tests)
+│   ├── models/              Trained artefacts (~8 MB total, all committed)
+│   │   ├── stage1/          HistGradientBoosting regressor
+│   │   ├── stage2/          RandomForest stacked classifier
+│   │   ├── metadata/        Per-stage metadata JSON + comparison report
+│   │   └── fire_detection/  YOLOv8 weights for monitoring layer
+│   ├── data/                Tracked datasets + runtime state
+│   │   ├── processed/       Engineered training set
+│   │   ├── oof/             Walk-forward OOF predictions
+│   │   └── notifications/   Detection evidence (legacy samples kept as demo)
+│   ├── outputs/             Runtime SQLite DB (auto-created, gitignored)
+│   ├── requirements.txt     Python dependencies (sklearn pinned to 1.6.1)
+│   ├── pytest.ini           Test config — pythonpath, testpaths
+│   ├── .env.example         Backend env template
+│   ├── README.md            Backend-specific docs
+│   └── Dockerfile           Starter template (see docs/DEPLOYMENT_PLAN.md)
+│
+├── frontend/                Next.js 16 + React 19 dashboard
 │   ├── src/
-│   │   ├── app/            App router
-│   │   ├── components/     UI + per-tab pages
-│   │   ├── hooks/          use-api hook
-│   │   └── lib/            api.ts, i18n, time helpers
+│   │   ├── app/             App router
+│   │   ├── components/      UI + per-tab pages
+│   │   ├── hooks/           use-api hook
+│   │   └── lib/             api.ts, i18n, time helpers
+│   ├── public/
 │   ├── package.json
-│   └── .env.example
-├── src/                    Backend Python source (imported as `src.*`)
-│   ├── api/                FastAPI app, routes, services, DB layer
-│   ├── data/               Open-Meteo / soil-moisture fetchers
-│   ├── features/           Feature engineering + schema validators
-│   ├── models/             Stacked decision rule + Stage 1/2 trainers
-│   ├── inference/          StackedPredictor (production inference)
-│   ├── monitoring/         Cameras, drone, YOLO detector, notifications
-│   ├── pipeline/           Training pipeline, live inference, drone logic
-│   └── evaluation/         Walk-forward + metrics
-├── configs/                Project-wide settings (paths, thresholds)
-├── models/                 Trained artefacts (see models/README.md)
-│   ├── stage1/
-│   ├── stage2/
-│   ├── metadata/
-│   └── fire_detection/
-├── data/                   Tracked datasets + runtime state (see data/README.md)
-│   ├── processed/          Engineered training set
-│   ├── oof/                Walk-forward OOF predictions
-│   └── notifications/      Detection evidence (legacy samples kept as demo)
-├── scripts/                Entry points (serve, train, migrations)
-├── tests/                  Pytest suite (77+ tests)
-├── legacy_detection_reference/   Reference-only legacy detection prototype
-├── requirements.txt        Python dependencies (sklearn pinned to 1.6.1)
-├── .env.example            Backend env template
-├── RUN_PROJECT.md          Operator runbook
-├── CORE_IDEA.md            Architecture invariants and contracts
-├── SQLITE_GUIDE.md         Database schema + migration rules
-└── PROJECT_BRIEF.md        Project goals and phases
+│   ├── .env.example         Frontend env template
+│   ├── README.md
+│   └── Dockerfile           Starter template
+│
+├── docs/                    All long-form project documentation
+│   ├── RUN_PROJECT.md       Operator runbook
+│   ├── CORE_IDEA.md         Architectural invariants and contracts
+│   ├── ARCHITECTURE.md      System architecture deep-dive
+│   ├── DEPLOYMENT_PLAN.md   Docker / deployment roadmap
+│   ├── SQLITE_GUIDE.md      Schema and migration rules
+│   ├── PROJECT_BRIEF.md     Goals and phases
+│   ├── PHASE1_SUMMARY.md    Phase 1 — ML core completion notes
+│   ├── PHASE3_SUMMARY.md    Phase 3 — frontend foundation notes
+│   ├── STATUS.md            Current project status
+│   ├── NEXT_STEPS.md        Outstanding follow-ups
+│   ├── OLD_PROJECT_NOTES.md Historical notes
+│   └── Fire_Prediction_Blueprint.pdf
+│
+├── docker-compose.yml       Starter template — backend + frontend + volumes
+├── README.md                You are here
+├── .gitignore
+└── legacy_detection_reference/   reference-only legacy detection prototype
 ```
 
 ---
@@ -130,20 +148,22 @@ from this prediction pipeline — it never writes `predicted_fwi` or
 
 | Tool | Version | Notes |
 |---|---|---|
-| Python | 3.11+ | sklearn pin requires 3.10+ |
+| Python | 3.11+ (3.10 minimum) | sklearn pin requires modern Python |
 | Node.js | 20+ | required by Next.js 16 |
 | npm | 10+ | ships with Node 20 |
 | Git | 2.40+ | |
-| OS | Windows 10/11, macOS, Linux | examples below show Windows shell |
+| OS | Windows 10/11, macOS, Linux | |
 
 The backend additionally needs network access to:
 
 - `api.open-meteo.com`
 - `archive-api.open-meteo.com`
 
+No paid API keys are required — Open-Meteo is public and key-less.
+
 ---
 
-## For collaborators — clone to running in 5 steps
+## Collaborator quick start
 
 ```bash
 # 1. Clone
@@ -151,25 +171,22 @@ git clone <this-repo-url> karabuk-fwi-ml
 cd karabuk-fwi-ml
 
 # 2. (Optional) copy env templates
-cp .env.example .env                              # Linux / macOS / Git Bash
+cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env.local
-# On PowerShell:  Copy-Item .env.example .env
 
-# 3. Backend — create venv + install
+# 3. Backend — venv + install
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1                      # PowerShell
-# source .venv/bin/activate                       # macOS / Linux
+# Windows PowerShell:  .\.venv\Scripts\Activate.ps1
+# Linux / macOS:       source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install -r backend/requirements.txt
 
 # 4. Frontend — install
-cd frontend
-npm install
-cd ..
+cd frontend && npm install && cd ..
 
 # 5. Run both (two terminals)
-# Terminal A — backend
-python scripts/serve.py
+# Terminal A — backend (from project root)
+python backend/scripts/serve.py
 # Terminal B — frontend
 cd frontend && npm run dev
 ```
@@ -181,52 +198,37 @@ Then open:
 - Health check: <http://localhost:8000/system/health>
 
 That is the entire bring-up. **No model files need to be downloaded
-separately** — every artefact in `models/` is committed to the repo
-(~8 MB total).
+separately** — every artefact in `backend/models/` is committed (~8 MB).
 
 ---
 
-## Backend — install, configure, run
+## Backend setup
 
 ```bash
-python -m pip install -r requirements.txt
-python scripts/serve.py
+python -m pip install -r backend/requirements.txt
+python backend/scripts/serve.py
 ```
 
 Behaviour on boot:
 
-- Initialises the SQLite database at `outputs/karabuk_fwi.db`
-  (auto-created if absent).
+- Initialises the SQLite database at `backend/outputs/karabuk_fwi.db`.
 - Pre-warms the stacked predictor (Stage 1 + Stage 2 joblib loads).
-- Pre-warms the YOLO detector (best-effort; OK to fail).
+- Pre-warms the YOLO detector (best-effort).
 - Validates the persisted camera mapping.
 - Starts APScheduler with two operational slots: 11:00 and 15:00
   Europe/Istanbul.
 
-Key endpoints (full list at `/docs`):
-
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/system/health` | GET | Stage 1/2/DB healthcheck |
-| `/system/model` | GET | Model metadata + thresholds |
-| `/system/scheduler` | GET | APScheduler status + next runs |
-| `/risk/check` | POST | Trigger an operational `manual` run |
-| `/risk/latest` | GET | Most recent operational prediction |
-| `/history` | GET | Paginated run history |
-| `/weather/live` | GET | Display-only current weather |
-| `/drone/state` | GET | Read-only drone launch policy |
-| `/monitoring/...` | misc | Detection feeds + notifications |
-
-A more detailed runbook lives in [`RUN_PROJECT.md`](./RUN_PROJECT.md).
+Detailed runbook: [`docs/RUN_PROJECT.md`](./docs/RUN_PROJECT.md).
+Backend-specific docs: [`backend/README.md`](./backend/README.md).
 
 ---
 
-## Frontend — install, configure, run
+## Frontend setup
 
 ```bash
 cd frontend
 npm install
-npm run dev          # development server at http://localhost:3000
+npm run dev          # development server on http://localhost:3000
 npm run build        # production build
 npm run start        # production server
 npm run lint
@@ -243,31 +245,56 @@ See [`frontend/.env.example`](./frontend/.env.example).
 
 ---
 
+## Database
+
+The backend uses **SQLite** for run history and system state. The
+operational database lives at `backend/outputs/karabuk_fwi.db` and is
+created automatically on first boot — **no migrations to run, no seed
+script to execute, no separate database server**.
+
+- The path is gitignored; collaborators get a fresh DB on their first
+  run.
+- Override with the `KARABUK_DB_PATH` env var if you need a custom
+  location.
+- Tests use a temp DB injected via the same env var (see
+  `backend/tests/conftest.py`).
+- One legacy migration script lives at
+  `backend/scripts/migrate_run_timestamps_to_istanbul.py` — only
+  needed if you have run-history rows from before the timezone fix.
+
+Schema reference: [`docs/SQLITE_GUIDE.md`](./docs/SQLITE_GUIDE.md).
+
+---
+
 ## Model files
 
 Every trained artefact is committed to the repo (~8 MB total), so a
 fresh clone is immediately runnable. See
-[`models/README.md`](./models/README.md) for the full breakdown — what
-each file is, which Python module loads it, and how to retrain.
+[`backend/models/README.md`](./backend/models/README.md) for the full
+breakdown.
 
 | File | Purpose |
 |---|---|
-| `models/stage1/histgb_regressor.joblib` | Stage 1 FWI regressor |
-| `models/stage2/rf_classifier_stacked.joblib` | Stage 2 high-risk classifier |
-| `models/metadata/stage1_metadata.json` | Stage 1 metrics |
-| `models/metadata/stage2_metadata.json` | Stage 2 metrics + tuned probability threshold |
-| `models/metadata/three_way_comparison.json` | Decision-rule comparison shown in the System tab |
-| `models/fire_detection/best3.pt` | YOLOv8 fire detector (monitoring layer) |
+| `backend/models/stage1/histgb_regressor.joblib` | Stage 1 FWI regressor |
+| `backend/models/stage2/rf_classifier_stacked.joblib` | Stage 2 high-risk classifier |
+| `backend/models/metadata/stage1_metadata.json` | Stage 1 metrics |
+| `backend/models/metadata/stage2_metadata.json` | Stage 2 metrics + tuned probability threshold |
+| `backend/models/metadata/three_way_comparison.json` | Decision-rule comparison shown in the System tab |
+| `backend/models/fire_detection/best3.pt` | YOLOv8 fire detector (monitoring layer) |
 
 To retrain:
 
 ```bash
-python scripts/train.py
+python backend/scripts/train.py
 ```
 
-> `requirements.txt` pins `scikit-learn==1.6.1` to match the version
-> used to pickle the joblib files. Do not upgrade sklearn without
+> `backend/requirements.txt` pins `scikit-learn==1.6.1` to match the
+> version used to pickle the joblibs. Do not upgrade sklearn without
 > retraining.
+
+**Git LFS is not used.** The total model footprint (~8 MB) is well
+under GitHub's 100 MB hard limit. Revisit only if a future retraining
+run produces a materially larger artefact.
 
 ---
 
@@ -275,39 +302,75 @@ python scripts/train.py
 
 | Variable | Scope | Default | Purpose |
 |---|---|---|---|
-| `KARABUK_DB_PATH` | backend | `outputs/karabuk_fwi.db` | Override SQLite location (used by tests). |
+| `KARABUK_DB_PATH` | backend | `backend/outputs/karabuk_fwi.db` | Override SQLite location (used by tests). |
 | `NEXT_PUBLIC_API_URL` | frontend | `http://localhost:8000` | Backend base URL. |
 
-Templates: [`.env.example`](./.env.example),
+Templates:
+[`backend/.env.example`](./backend/.env.example),
 [`frontend/.env.example`](./frontend/.env.example).
 
-No real secrets are required to run the project — the Open-Meteo APIs
-used here are public and key-less.
+No real secrets are required to run the project.
 
 ---
 
 ## Tests
 
+From the project root:
+
 ```bash
-python -m pytest tests/ -v
+python -m pytest backend/tests -v
 ```
 
+Or, equivalently, from inside `backend/`:
+
+```bash
+cd backend && python -m pytest -v
+```
+
+Both commands work — `backend/pytest.ini` sets the right
+`pythonpath` and `testpaths`. Current baseline: **83 tests passing**.
 The suite covers prediction, API routes, monitoring, run-type
-taxonomy, and JSON serialization safety. `tests/conftest.py` redirects
-the SQLite database to a temporary file via `KARABUK_DB_PATH`, so test
-runs never pollute `outputs/karabuk_fwi.db`.
+taxonomy, JSON serialization safety, walk-forward training, and
+stacking. Tests redirect the SQLite DB to a temp file, so they never
+pollute `backend/outputs/karabuk_fwi.db`.
+
+---
+
+## Docker / deployment
+
+This repository ships **starter templates** for containerised
+deployment:
+
+- [`backend/Dockerfile`](./backend/Dockerfile)
+- [`frontend/Dockerfile`](./frontend/Dockerfile)
+- [`docker-compose.yml`](./docker-compose.yml)
+
+These are conservative, opinionated starting points. They are
+**not yet smoke-tested in CI** — treat them as a roadmap. See
+[`docs/DEPLOYMENT_PLAN.md`](./docs/DEPLOYMENT_PLAN.md) for the full
+deployment checklist (volumes for `backend/outputs/`, env-var
+contracts, image build commands, what is safe to do now vs. later).
+
+Quick try (once you have Docker installed):
+
+```bash
+docker compose up --build
+# Backend at  http://localhost:8000
+# Frontend at http://localhost:3000
+```
 
 ---
 
 ## Common errors and fixes
 
 **`ModuleNotFoundError: No module named 'src'` when running scripts.**
-Run from the repo root, not from inside `scripts/` or `src/`. The
-entry-point scripts inject the repo root into `sys.path` automatically.
+Run from the project root, or `cd backend` first. The entry-point
+scripts inject the right directory into `sys.path` automatically.
 
 **`InconsistentVersionWarning` from joblib.**
 You upgraded scikit-learn past 1.6.1. Either downgrade
-(`pip install scikit-learn==1.6.1`) or retrain (`python scripts/train.py`).
+(`pip install scikit-learn==1.6.1`) or retrain
+(`python backend/scripts/train.py`).
 
 **Frontend cannot reach the backend.**
 Check that the backend is running on port 8000 and that
@@ -315,19 +378,18 @@ Check that the backend is running on port 8000 and that
 Restart `npm run dev` after editing `frontend/.env.local`.
 
 **`ultralytics` / OpenCV install fails.**
-The monitoring layer is optional. The prediction pipeline runs without
-it. You can comment out the `ultralytics`, `opencv-python` and
-`djitellopy` lines in `requirements.txt` if you only need the
-prediction backend.
+The monitoring layer is optional. Comment out the `ultralytics`,
+`opencv-python` and `djitellopy` lines in `backend/requirements.txt`
+if you only need the prediction backend.
 
-**`outputs/karabuk_fwi.db` is missing.**
-It is created automatically on first backend boot. If the file is
-locked on Windows, stop any running backend instance first.
+**`backend/outputs/karabuk_fwi.db` is missing.**
+Created automatically on first backend boot. If the file is locked
+on Windows, stop any running backend instance first.
 
 **Wrong timestamps in the dashboard (off by 3 hours).**
 Run the one-shot migration:
 ```bash
-python scripts/migrate_run_timestamps_to_istanbul.py
+python backend/scripts/migrate_run_timestamps_to_istanbul.py
 ```
 
 ---
@@ -336,18 +398,20 @@ python scripts/migrate_run_timestamps_to_istanbul.py
 
 | File | Topic |
 |---|---|
-| [`RUN_PROJECT.md`](./RUN_PROJECT.md) | Operator runbook (boot, scheduler, manual checks, monitoring) |
-| [`CORE_IDEA.md`](./CORE_IDEA.md) | Architectural invariants and contracts |
-| [`PROJECT_BRIEF.md`](./PROJECT_BRIEF.md) | Project goals and phase plan |
-| [`PHASE1_SUMMARY.md`](./PHASE1_SUMMARY.md) | Phase 1 — ML core completion notes |
-| [`PHASE3_SUMMARY.md`](./PHASE3_SUMMARY.md) | Phase 3 — frontend foundation notes |
-| [`STATUS.md`](./STATUS.md) | Current project status |
-| [`NEXT_STEPS.md`](./NEXT_STEPS.md) | Outstanding follow-ups |
-| [`SQLITE_GUIDE.md`](./SQLITE_GUIDE.md) | SQLite schema, migrations, conventions |
-| [`models/README.md`](./models/README.md) | Per-artefact reference |
-| [`data/README.md`](./data/README.md) | Per-folder data reference |
-| [`backend/README.md`](./backend/README.md) | Why the backend code lives at the repo root |
-| [`frontend/README.md`](./frontend/README.md) | Frontend layout + scripts |
+| [`docs/RUN_PROJECT.md`](./docs/RUN_PROJECT.md) | Operator runbook (boot, scheduler, manual checks, monitoring) |
+| [`docs/CORE_IDEA.md`](./docs/CORE_IDEA.md) | Architectural invariants and contracts |
+| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | System architecture deep-dive |
+| [`docs/DEPLOYMENT_PLAN.md`](./docs/DEPLOYMENT_PLAN.md) | Docker / deployment roadmap |
+| [`docs/SQLITE_GUIDE.md`](./docs/SQLITE_GUIDE.md) | Schema, migrations, conventions |
+| [`docs/PROJECT_BRIEF.md`](./docs/PROJECT_BRIEF.md) | Project goals and phases |
+| [`docs/PHASE1_SUMMARY.md`](./docs/PHASE1_SUMMARY.md) | ML core completion notes |
+| [`docs/PHASE3_SUMMARY.md`](./docs/PHASE3_SUMMARY.md) | Frontend foundation notes |
+| [`docs/STATUS.md`](./docs/STATUS.md) | Current project status |
+| [`docs/NEXT_STEPS.md`](./docs/NEXT_STEPS.md) | Outstanding follow-ups |
+| [`backend/README.md`](./backend/README.md) | Backend-specific docs |
+| [`backend/models/README.md`](./backend/models/README.md) | Per-artefact model reference |
+| [`backend/data/README.md`](./backend/data/README.md) | Per-folder data reference |
+| [`frontend/README.md`](./frontend/README.md) | Frontend-specific docs |
 
 ---
 

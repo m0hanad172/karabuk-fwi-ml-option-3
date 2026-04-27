@@ -26,8 +26,14 @@ tz-aware are skipped.
 """
 from __future__ import annotations
 
+import sys
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
+
+# Make the backend package roots importable when this script is invoked
+# directly (`python backend/scripts/migrate_run_timestamps_to_istanbul.py`).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.api.db.database import get_connection
 from src.api.time_utils import ISTANBUL_TZ
