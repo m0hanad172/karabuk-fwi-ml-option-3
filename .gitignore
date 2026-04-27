@@ -1,0 +1,34 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Node / frontend
+node_modules/
+dist/
+build/
+.vite/
+
+# Data / outputs / models - avoid uploading large/generated files
+data/raw/
+data/interim/
+outputs/
+models/
+*.joblib
+*.pkl
+*.sqlite
+*.db
+
+# System files
+.DS_Store
+Thumbs.db

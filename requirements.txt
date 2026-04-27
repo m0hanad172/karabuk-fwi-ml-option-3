@@ -1,0 +1,32 @@
+# --- Core ML / data ---
+# IMPORTANT: sklearn pinned to match the version used to train and pickle
+# the Option 3 stacked models (models/stage1/*.joblib, models/stage2/*.joblib).
+# Do not upgrade without retraining Phase 1 artifacts.
+scikit-learn==1.6.1
+pandas>=2.2,<3
+numpy>=1.26,<3
+joblib>=1.3
+matplotlib>=3.7,<4
+seaborn>=0.12,<1
+
+# --- Utilities ---
+requests>=2.31
+python-dotenv>=1.0
+httpx>=0.27,<1
+
+# --- Backend API ---
+fastapi>=0.110,<1
+uvicorn>=0.29,<1
+pydantic>=2.0,<3
+apscheduler>=3.10,<4
+python-multipart>=0.0.9
+
+# --- Monitoring / detection layer (legacy-reuse; fully isolated from Option 3 prediction) ---
+opencv-python>=4.9,<5
+ultralytics>=8.2,<9
+pillow>=10.0,<13
+# djitellopy is optional — drone gracefully degrades to "hardware unavailable" if missing.
+djitellopy>=2.5
+
+# --- Testing ---
+pytest>=8.0,<10

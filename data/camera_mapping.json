@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "roles": {
+    "pc_camera": {
+      "index": 1,
+      "fingerprint": {
+        "width": 1280,
+        "height": 720,
+        "fps": 0.0
+      }
+    },
+    "webcam": {
+      "index": 0,
+      "fingerprint": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 0.0
+      }
+    }
+  }
+}
