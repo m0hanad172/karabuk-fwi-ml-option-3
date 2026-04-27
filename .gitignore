@@ -1,32 +1,73 @@
+# =====================================================================
 # Python
+# =====================================================================
 .venv/
 venv/
+env/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+*.egg-info/
 
-# Environment / secrets
+# =====================================================================
+# Environment / secrets — keep .env.example files tracked
+# =====================================================================
 .env
 .env.*
 !.env.example
+!**/.env.example
 
-# Node / frontend
+# =====================================================================
+# Node / frontend build artifacts
+# =====================================================================
 node_modules/
 dist/
 build/
 .vite/
+.next/
+out/
 
-# Data / outputs / models - avoid uploading large/generated files
+# =====================================================================
+# IDE / editor + Claude Code worktrees
+# =====================================================================
+.idea/
+.vscode/
+*.code-workspace
+.claude/
+
+# =====================================================================
+# Logs
+# =====================================================================
+*.log
+logs/
+
+# =====================================================================
+# Operational state — generated at runtime, not part of source tree
+# =====================================================================
+# Raw / interim data is large or licensed — collaborators rebuild on demand
 data/raw/
 data/interim/
+
+# Live detection evidence — written every time a fire is detected, so we
+# do not want every detection to dirty the working tree. A handful of
+# already-tracked samples are kept as demo evidence; new ones are ignored.
 data/notifications/*.jsonl
 data/notifications/*.jpg
+data/notifications/*.jpeg
+data/notifications/*.png
+
+# Operational SQLite database (recreated automatically on first boot)
 *.sqlite
 *.db
+outputs/
 
+# =====================================================================
 # System files
+# =====================================================================
 .DS_Store
 Thumbs.db
