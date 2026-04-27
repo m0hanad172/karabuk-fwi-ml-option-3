@@ -1,0 +1,52 @@
+# =====================================================================
+# Karabuk FWI — local Docker compose (starter template)
+# =====================================================================
+# Conservative defaults aimed at a single-host development / demo
+# deployment. Smoke-test before relying on it; see
+# docs/DEPLOYMENT_PLAN.md for the full rollout plan.
+# =====================================================================
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: karabuk-fwi-backend:latest
+    container_name: karabuk-fwi-backend
+    restart: unless-stopped
+    environment:
+      KARABUK_DB_PATH: /app/outputs/karabuk_fwi.db
+    volumes:
+      - backend_outputs:/app/outputs
+      # Mount detection evidence to the host if you want to inspect it.
+      # - ./backend/data/notifications:/app/data/notifications
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/system/health', timeout=2).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* must be set at build time. `backend` resolves
+        # via the compose-network DNS once the stack is up.
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    image: karabuk-fwi-frontend:latest
+    container_name: karabuk-fwi-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+volumes:
+  backend_outputs:
+    name: karabuk_fwi_backend_outputs
