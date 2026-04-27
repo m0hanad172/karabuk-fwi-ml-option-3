@@ -7,19 +7,39 @@ Karabük FWI Option 3 dashboard.
 
 ## 1. Where the database lives
 
-- **Production path:** `outputs/karabuk_fwi.db` (relative to the repo root).
-- **Test override:** `tests/conftest.py` sets the `KARABUK_DB_PATH`
-  environment variable to a temp file, so running `pytest` never writes
-  into the production DB.
-- **Resolution code:** `src/api/db/database.py::_db_path()`. It checks
-  `KARABUK_DB_PATH` first and falls back to `OUTPUTS_DIR / "karabuk_fwi.db"`.
-  The path is resolved lazily on every call, so you can point a running
-  process at a different file by exporting the env var before the first
-  query.
+- **Production path:** `backend/outputs/karabuk_fwi.db` (relative to
+  the project root). `OUTPUTS_DIR` in `backend/configs/paths.py`
+  resolves through `Path(__file__).resolve().parent.parent` and
+  always lands on `backend/`.
+- **Test override:** `backend/tests/conftest.py` sets the
+  `KARABUK_DB_PATH` environment variable to a temp file, so running
+  `pytest` never writes into the production DB.
+- **Resolution code:** `backend/src/api/db/database.py::_db_path()`.
+  It checks `KARABUK_DB_PATH` first and falls back to
+  `OUTPUTS_DIR / "karabuk_fwi.db"`. The path is resolved lazily on
+  every call, so you can point a running process at a different file
+  by exporting the env var before the first query.
 
 The DB file is created on first use. `get_connection()` also enables
-WAL journal mode so concurrent reads from the API never block scheduler
-writes.
+WAL journal mode so concurrent reads from the API never block
+scheduler writes.
+
+> **Migrating across the `backend/` restructure.** The DB path moved
+> from `outputs/karabuk_fwi.db` (legacy root) to
+> `backend/outputs/karabuk_fwi.db`. If your dashboard is empty after
+> the upgrade because your runs are stranded at the old path, run
+> `python backend/scripts/smoke_check.py` (it shows both the
+> resolved path and the row count), then copy the legacy DB in:
+>
+> ```bash
+> mv backend/outputs/karabuk_fwi.db backend/outputs/karabuk_fwi.db.empty.bak
+> cp outputs/karabuk_fwi.db backend/outputs/karabuk_fwi.db
+> mv outputs/karabuk_fwi.db outputs/karabuk_fwi.db.legacy.bak
+> ```
+>
+> The schema is identical across the restructure (same tables, same
+> columns), so the data lands in the right place with no other
+> migration step required.
 
 ---
 

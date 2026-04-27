@@ -221,8 +221,9 @@ returns the ring buffer (last 200 events). The dashboard polls every
 | `/system/scheduler` | GET | APScheduler status + next runs |
 | `/risk/check` | POST | Trigger an operational `manual` run |
 | `/risk/latest` | GET | Latest operational prediction |
-| `/history` | GET | Paginated run history |
-| `/history/{run_id}` | GET | Run detail (validation, features, thresholds) |
+| `/history/runs` | GET | Paginated run history (used by Run History tab) |
+| `/history/runs/{run_id}` | GET | Run detail (validation, features, thresholds) |
+| `/history/analytics` | GET | Long-range FWI analytics (used by Analytics tab) |
 | `/weather/live` | GET | Display-only current weather snapshot |
 | `/drone/state` | GET | Read-only drone launch policy |
 | `/monitoring/...` | misc | Detection feeds + notifications |
@@ -233,3 +234,42 @@ returns the ring buffer (last 200 events). The dashboard polls every
 - Afternoon run: **15:00** Istanbul, `run_type = scheduled`
 - Manual runs: on-demand, `run_type = manual`
 - Test/evaluation runs: NEVER appear in Overview or drone policy.
+
+---
+
+## 10. Troubleshooting: dashboard shows no data
+
+If the dashboard renders but every tile is empty / "no data", run
+the smoke check first:
+
+```bash
+python backend/scripts/smoke_check.py
+```
+
+It opens the configured SQLite DB, reports the `run_history` row
+count, and probes every endpoint the frontend uses. The output
+points to one of three causes:
+
+1. **Backend not running, or wrong API URL.** Confirm
+   `curl http://localhost:8000/system/health` returns `200`. Check
+   `frontend/.env.local` — `NEXT_PUBLIC_API_URL` must point at the
+   running backend (default `http://localhost:8000`). Restart
+   `npm run dev` after any change to `.env.local`.
+2. **`run_history` is empty (0 rows).** Either you have a fresh
+   clone or a fresh DB. Trigger a manual run from the **Risk
+   Decision** tab → **Run Manual Check** (or
+   `POST /risk/check`). The new row shows up immediately in
+   Overview and Run History.
+3. **Stale legacy DB at the root** (only relevant if you upgraded
+   across the `backend/` restructure). The smoke check shows the
+   resolved DB path — if your old runs live at
+   `outputs/karabuk_fwi.db` but the resolved path is
+   `backend/outputs/karabuk_fwi.db`, copy the legacy file in:
+   ```bash
+   mv backend/outputs/karabuk_fwi.db backend/outputs/karabuk_fwi.db.empty.bak
+   cp outputs/karabuk_fwi.db backend/outputs/karabuk_fwi.db
+   mv outputs/karabuk_fwi.db outputs/karabuk_fwi.db.legacy.bak
+   ```
+   The schema is unchanged across the restructure, so the data
+   lands in the right tables. Restart the backend to pick up the
+   new DB.

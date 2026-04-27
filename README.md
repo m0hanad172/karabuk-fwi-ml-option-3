@@ -334,6 +334,26 @@ taxonomy, JSON serialization safety, walk-forward training, and
 stacking. Tests redirect the SQLite DB to a temp file, so they never
 pollute `backend/outputs/karabuk_fwi.db`.
 
+### One-shot smoke check
+
+For a quick "is the whole thing wired up correctly?" probe — useful
+right after a fresh clone, after pulling new commits, or while
+debugging an empty dashboard — run:
+
+```bash
+# from project root, in-process (fastest)
+python backend/scripts/smoke_check.py
+
+# or, against an already-running backend
+python backend/scripts/smoke_check.py --url http://localhost:8000
+```
+
+The script verifies every model artefact is on disk, opens the
+configured SQLite DB and reports the `run_history` row count, then
+hits every endpoint the dashboard consumes. Exit code is 0 on
+success and 1 on any failure, so it is safe to chain into a CI
+step or a git hook.
+
 ---
 
 ## Docker / deployment
@@ -391,6 +411,38 @@ Run the one-shot migration:
 ```bash
 python backend/scripts/migrate_run_timestamps_to_istanbul.py
 ```
+
+**Dashboard is empty (no Overview tile, no Run History rows).**
+Almost always one of three things — the smoke check tells you
+which:
+
+```bash
+python backend/scripts/smoke_check.py
+```
+
+1. **Backend is not running**, or the frontend is pointed at the
+   wrong URL. Confirm `curl http://localhost:8000/system/health`
+   returns `200`, and that `NEXT_PUBLIC_API_URL` in
+   `frontend/.env.local` matches.
+2. **The SQLite database is empty** — fresh clone, no runs yet.
+   Trigger one from the **Risk Decision** tab → **Run Manual
+   Check** (or `curl -X POST http://localhost:8000/risk/check
+   -H "Content-Type: application/json" -d '{}'`). The new run
+   appears in Overview and Run History within a second.
+3. **Stale DB at the legacy path** (only if you upgraded across
+   the `backend/` restructure). Real history at
+   `outputs/karabuk_fwi.db` and an empty new DB at
+   `backend/outputs/karabuk_fwi.db`. Migration is a one-liner —
+   stop the backend, then:
+   ```bash
+   # back up the empty DB, copy the legacy one in, archive the
+   # legacy file
+   mv backend/outputs/karabuk_fwi.db backend/outputs/karabuk_fwi.db.empty.bak
+   cp outputs/karabuk_fwi.db backend/outputs/karabuk_fwi.db
+   mv outputs/karabuk_fwi.db outputs/karabuk_fwi.db.legacy.bak
+   ```
+   Both DBs share the same schema, so the data lands in the
+   correct tables.
 
 ---
 
