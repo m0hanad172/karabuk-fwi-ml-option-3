@@ -15,9 +15,9 @@ data/
 │   ├── stage1_oof_predictions.csv   ✅ tracked — walk-forward OOF predictions
 │   ├── stage1_test_predictions.csv  ✅ tracked
 │   └── stage2_test_predictions.csv  ✅ tracked
-├── notifications/                   ⚠️ partially tracked
-│   ├── alerts.jsonl                 evidence log (legacy samples tracked, new ones ignored)
-│   └── *.jpg                        detection snapshots (legacy samples tracked, new ones ignored)
+├── notifications/                   🚫 gitignored — runtime detection evidence
+│   ├── alerts.jsonl                 JSONL evidence log (written by monitoring layer)
+│   └── *.jpg                        detection snapshots (written by monitoring layer)
 ├── raw/                             🚫 gitignored — rebuild via fetch_weather.py if needed
 └── interim/                         🚫 gitignored — intermediate feature-engineering outputs
 ```
@@ -33,18 +33,32 @@ data/
 | `interim/` | Intermediate artefacts emitted by feature engineering. Not committed. |
 | `camera_mapping.json` | Bound logical roles (`pc_camera`, `webcam`) → physical USB device fingerprints, so the operator does not have to re-run auto-detect every boot. See `src/monitoring/camera_mapping.py`. |
 
-## Why notifications are *partially* tracked
+## Why notifications are gitignored
 
-A handful of detection snapshots from earlier runs are still in the
-repo because they serve as visible demo evidence. Going forward, every
-new snapshot is gitignored (`data/notifications/*.jpg`,
-`data/notifications/*.jsonl`) so detection events do not dirty the
-working tree. If you want to share new evidence with collaborators,
-attach it to an issue or a PR instead of committing.
+`backend/data/notifications/` is runtime evidence written by the
+monitoring layer every time YOLO triggers — it is not part of the
+project source. The `.gitignore` rules are:
+
+```
+backend/data/notifications/*.jsonl
+backend/data/notifications/*.jpg
+backend/data/notifications/*.jpeg
+backend/data/notifications/*.png
+```
+
+This keeps detection events out of the working tree (so a busy
+demo afternoon doesn't generate dozens of "untracked" entries) and
+keeps the repository small. The directory itself stays in the repo
+because the monitoring code creates files inside it on first run; if
+the directory ever ends up empty in your clone, the backend will
+recreate it automatically. If you need to share specific evidence
+frames with collaborators, attach them to an issue or PR rather than
+committing them.
 
 ## Operational SQLite database
 
 The backend persists run history and system state in
-`outputs/karabuk_fwi.db`. That file is **not** in `data/` and is **not**
-committed — it is created automatically on first boot. See
-`SQLITE_GUIDE.md` for the schema and migration rules.
+`backend/outputs/karabuk_fwi.db`. That file is **not** in `data/`
+and is **not** committed — it is created automatically on first boot.
+See [`../../docs/SQLITE_GUIDE.md`](../../docs/SQLITE_GUIDE.md) for the
+schema and migration rules.

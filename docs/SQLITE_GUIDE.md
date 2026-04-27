@@ -136,8 +136,12 @@ exactly one place to change the shape, and all three read paths
 
 ### With the Python REPL
 
-```powershell
-"C:/Users/HICOM/Desktop/Pyhon rs/inst/python.exe"
+Run this from the project root (or `cd backend` first) so the
+`src.*` imports resolve:
+
+```bash
+cd backend
+python
 >>> from src.api.db.database import get_connection
 >>> conn = get_connection()
 >>> for r in conn.execute(
@@ -149,8 +153,8 @@ exactly one place to change the shape, and all three read paths
 
 ### With the `sqlite3` CLI
 
-```powershell
-sqlite3 outputs\karabuk_fwi.db
+```bash
+sqlite3 backend/outputs/karabuk_fwi.db
 sqlite> .headers on
 sqlite> .mode column
 sqlite> SELECT run_id, run_type, run_timestamp, predicted_fwi, high_risk_flag

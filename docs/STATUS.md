@@ -331,23 +331,23 @@ No change to prediction logic, thresholds, architecture, or dependencies.
 ## How to run
 
 ### Backend
-```powershell
-cd E:\karabuk-fwi-ml-option-3
-"C:/Users/HICOM/Desktop/Pyhon rs/inst/python.exe" scripts/serve.py
+```bash
+# from the project root
+python backend/scripts/serve.py
 # API: http://localhost:8000  |  Docs: http://localhost:8000/docs
 ```
 
 ### Frontend
-```powershell
-cd E:\karabuk-fwi-ml-option-3\frontend
+```bash
+cd frontend
 npm run dev
 # Dashboard: http://localhost:3000
 ```
 
 ### Tests
-```powershell
-cd E:\karabuk-fwi-ml-option-3
-"C:/Users/HICOM/Desktop/Pyhon rs/inst/python.exe" -m pytest tests/ -v
+```bash
+# from the project root
+python -m pytest backend/tests -v
 ```
 
-Full runbook in `RUN_PROJECT.md`.
+Full runbook in [`RUN_PROJECT.md`](./RUN_PROJECT.md).

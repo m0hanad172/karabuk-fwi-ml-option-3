@@ -18,8 +18,8 @@ Anything that already has an offset is left alone.
 
 Usage
 -----
-    "C:/Users/HICOM/Desktop/Pyhon rs/inst/python.exe" \
-        scripts/migrate_run_timestamps_to_istanbul.py
+    # from the project root:
+    python backend/scripts/migrate_run_timestamps_to_istanbul.py
 
 Safe to re-run: the detection rule is idempotent, rows that are already
 tz-aware are skipped.

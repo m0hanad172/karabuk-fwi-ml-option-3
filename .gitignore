@@ -62,9 +62,11 @@ backend/data/notifications/*.jpeg
 backend/data/notifications/*.png
 
 # Operational SQLite database (recreated automatically on first boot).
-# `backend/outputs/` is the canonical post-restructure path; the
+# `backend/outputs/` is the canonical post-restructure path; the bare
+# `outputs/` rule catches the legacy root-level location too, and the
 # bare-name globs catch any stray .db / .sqlite files anywhere.
 backend/outputs/
+outputs/
 *.sqlite
 *.sqlite3
 *.db

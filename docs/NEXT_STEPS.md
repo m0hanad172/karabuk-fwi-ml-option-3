@@ -144,9 +144,9 @@ before implementing.
 ## Key reminders
 
 - **Do not redesign Phase 1, 2, 3, 4, 5, or 6** — all complete and verified.
-- Backend: `"C:/Users/HICOM/Desktop/Pyhon rs/inst/python.exe" scripts/serve.py` on port 8000
+- Backend: `python backend/scripts/serve.py` on port 8000 (from project root)
 - Frontend: `npm run dev` in `frontend/` on port 3000
-- Tests: `"C:/Users/HICOM/Desktop/Pyhon rs/inst/python.exe" -m pytest tests/ -v`
-- Full runbook: `RUN_PROJECT.md`
-- DB inspection: `SQLITE_GUIDE.md`
-- Architectural contract: `CORE_IDEA.md`
+- Tests: `python -m pytest backend/tests -v` (from project root)
+- Full runbook: [`RUN_PROJECT.md`](./RUN_PROJECT.md)
+- DB inspection: [`SQLITE_GUIDE.md`](./SQLITE_GUIDE.md)
+- Architectural contract: [`CORE_IDEA.md`](./CORE_IDEA.md)
