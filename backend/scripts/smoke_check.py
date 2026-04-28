@@ -1,5 +1,5 @@
 """
-Karabuk FWI — backend smoke check.
+Karabuk FWI - backend smoke check.
 
 A fast post-clone / post-deploy sanity probe. Verifies that:
 
@@ -13,7 +13,7 @@ A fast post-clone / post-deploy sanity probe. Verifies that:
 Designed to be runnable against either:
 
   - the local on-disk DB at ``backend/outputs/karabuk_fwi.db``
-    (default — uses an in-process FastAPI ``TestClient``), or
+    (default - uses an in-process FastAPI ``TestClient``), or
   - a separately-running backend over HTTP (pass ``--url
     http://localhost:8000``).
 
@@ -40,11 +40,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # The dashboard fetches these endpoints. Keep this list in sync with
-# frontend/src/lib/api.ts. Any 5xx or unexpected 4xx → fail.
+# frontend/src/lib/api.ts. Any 5xx or unexpected 4xx fails. A fresh
+# runtime DB has no predictions yet, so /risk/latest may legitimately
+# return the dashboard's empty-state 404.
 DASHBOARD_ENDPOINTS = [
     "/",
     "/system/health",
     "/system/model",
+    "/system/config",
     "/system/scheduler",
     "/risk/latest",
     "/history/runs?limit=5&offset=0",
@@ -58,6 +61,15 @@ DASHBOARD_ENDPOINTS = [
     "/monitoring/cameras",
     "/monitoring/drone/status",
 ]
+ACCEPTABLE_EMPTY_STATE_STATUS = {
+    "/risk/latest": {404},
+}
+
+
+def _status_ok(path: str, status_code: int) -> bool:
+    if status_code == 200:
+        return True
+    return status_code in ACCEPTABLE_EMPTY_STATE_STATUS.get(path, set())
 
 
 def _check_artefacts() -> list[str]:
@@ -92,14 +104,14 @@ def _check_artefacts() -> list[str]:
 
 def _check_database() -> list[str]:
     """Open the configured SQLite DB and report run-history row count."""
-    from src.api.db.database import _db_path  # noqa: SLF001 — internal accessor
+    from src.api.db.database import _db_path  # noqa: SLF001 - internal accessor
 
     failures: list[str] = []
     db_path = _db_path()
     print("--- database ---")
     print(f"  resolved path : {db_path}")
     if not db_path.exists():
-        # Not strictly a failure — the backend creates it on first boot.
+        # Not strictly a failure - the backend creates it on first boot.
         print("  [  WARN ] DB file does not exist yet; will be created on first boot.")
         return failures
     try:
@@ -120,9 +132,9 @@ def _check_database() -> list[str]:
             print(f"  run_history   : {n} rows")
             if n == 0:
                 print(
-                    "  [   HINT  ] run_history is empty — the dashboard "
+                    "  [   HINT  ] run_history is empty - the dashboard "
                     "Overview / Run History tabs will look blank until you "
-                    "trigger a manual risk check (Risk Decision tab → "
+                    "trigger a manual risk check (Risk Decision tab -> "
                     "Run Manual Check, or POST /risk/check)."
                 )
         if "system_state" in tables:
@@ -145,7 +157,7 @@ def _check_endpoints_in_process() -> list[str]:
     with TestClient(app) as c:
         for path in DASHBOARD_ENDPOINTS:
             r = c.get(path)
-            ok = r.status_code == 200
+            ok = _status_ok(path, r.status_code)
             flag = "OK" if ok else "FAIL"
             extra = ""
             if ok:
@@ -164,6 +176,7 @@ def _check_endpoints_in_process() -> list[str]:
 
 def _check_endpoints_remote(base_url: str) -> list[str]:
     """Hit each endpoint over HTTP against an already-running backend."""
+    import urllib.error
     import urllib.request
 
     failures: list[str] = []
@@ -172,11 +185,17 @@ def _check_endpoints_remote(base_url: str) -> list[str]:
         url = base_url.rstrip("/") + path
         try:
             with urllib.request.urlopen(url, timeout=5) as resp:
-                ok = resp.status == 200
+                ok = _status_ok(path, resp.status)
                 flag = "OK" if ok else "FAIL"
                 print(f"  [{flag:>4}] {resp.status:>4}  {path}")
                 if not ok:
                     failures.append(f"{path} -> {resp.status}")
+        except urllib.error.HTTPError as e:
+            ok = _status_ok(path, e.code)
+            flag = "OK" if ok else "FAIL"
+            print(f"  [{flag:>4}] {e.code:>4}  {path}  ({e.reason})")
+            if not ok:
+                failures.append(f"{path} -> {e.code}: {e.reason}")
         except Exception as e:  # noqa: BLE001
             print(f"  [FAIL] ERR   {path}  ({e})")
             failures.append(f"{path} -> {e}")
