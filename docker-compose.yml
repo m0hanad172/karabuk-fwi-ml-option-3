@@ -16,10 +16,24 @@ services:
     restart: unless-stopped
     environment:
       KARABUK_DB_PATH: /app/outputs/karabuk_fwi.db
+      # The image itself is built with BACKEND_ENV=production so the
+      # uvicorn watcher never starts. Override for a dev container if
+      # you want auto-reload (and bind-mount /app/src as a volume).
+      BACKEND_ENV: production
+      # Compose default: allow the frontend container's host-published
+      # origin (browser → http://localhost:3000). Tighten or replace
+      # for any deployment that sits behind a reverse proxy / TLS edge.
+      CORS_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+      # Local compose is a demo stack, so the synthetic Test alert flow
+      # is explicitly enabled even though BACKEND_ENV is production-like.
+      # Set to "false" before exposing the API beyond a trusted demo.
+      DEMO_ALERTS_ENABLED: "true"
     volumes:
       - backend_outputs:/app/outputs
-      # Mount detection evidence to the host if you want to inspect it.
-      # - ./backend/data/notifications:/app/data/notifications
+      # Persist detection evidence (alerts.jsonl + JPGs) across
+      # `compose down`/`up`. Mount to a host path if you want to
+      # inspect it from outside the container.
+      - backend_notifications:/app/data/notifications
     ports:
       - "8000:8000"
     healthcheck:
@@ -50,3 +64,5 @@ services:
 volumes:
   backend_outputs:
     name: karabuk_fwi_backend_outputs
+  backend_notifications:
+    name: karabuk_fwi_backend_notifications

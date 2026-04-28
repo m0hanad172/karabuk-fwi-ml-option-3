@@ -7,6 +7,10 @@ __pycache__/
 
 # Local runtime state — never bake into the image.
 outputs/
+data/notifications/*.jsonl
+data/notifications/*.jpg
+data/notifications/*.jpeg
+data/notifications/*.png
 .env
 .env.*
 !.env.example
