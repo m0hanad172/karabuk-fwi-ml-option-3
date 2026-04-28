@@ -34,7 +34,7 @@ backend/
 │   └── evaluation/           Walk-forward + metrics
 ├── configs/                  paths.py, settings.py — `configs.*`
 ├── scripts/                  serve.py, train.py, migrations
-├── tests/                    Pytest suite (83 tests)
+├── tests/                    Pytest suite (97 tests)
 ├── models/                   Trained joblib + YOLO weights (committed)
 ├── data/                     Engineered dataset + OOF predictions + demo notifications
 ├── outputs/                  Runtime SQLite DB (auto-created, gitignored)
@@ -77,6 +77,9 @@ Variables (all optional):
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `BACKEND_ENV` | `development` | `development` enables reload by default; `production`/`docker` disables reload and uses production-like feature defaults |
+| `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | FastAPI CORS allow-list; production-like modes never default to wildcard |
+| `DEMO_ALERTS_ENABLED` | `true` outside production, `false` in production unless explicitly set | Gates `POST /monitoring/alerts/test` and the frontend Test alert button |
 | `KARABUK_DB_PATH` | `backend/outputs/karabuk_fwi.db` | Override SQLite path |
 
 The backend boots successfully with **zero** environment variables set.
@@ -100,14 +103,14 @@ python backend/scripts/serve.py
 From the project root:
 
 ```bash
-python -m pytest backend/tests -v
+python -m pytest backend/tests -q
 ```
 
 Or from `backend/`:
 
 ```bash
 cd backend
-python -m pytest -v
+python -m pytest -q
 ```
 
 Test runs use a temp SQLite database via `KARABUK_DB_PATH` (set in
@@ -171,13 +174,30 @@ section in the root README):
   poll target for the in-app banner).
 - `GET /monitoring/alerts/{alert_id}` — single alert with bboxes.
 - `POST /monitoring/alerts/test` — append a synthetic alert via the
-  real persistence path. Useful for end-to-end testing the dashboard
-  when no camera / drone hardware is plugged in.
+  real persistence path when `DEMO_ALERTS_ENABLED=true`. Useful for
+  end-to-end testing the dashboard when no camera / drone hardware is
+  plugged in.
 
 The whole `data/notifications/` tree is gitignored runtime state.
 Adding `?source=drone|webcam|pc_camera` to the list endpoint filters
 the evidence log; demo alerts (`POST /alerts/test`) are tagged
-`source="demo"` so they are easy to filter or remove later.
+`source="demo"` so they are easy to filter or review separately. Do not
+delete the alert log as part of normal cleanup.
+
+`GET /system/config` returns the safe public runtime flags consumed by
+the frontend: `backend_env`, `service_mode`, `demo_alerts_enabled`, and
+`version`. It does not expose local paths or secrets.
+
+Optional demo seeding:
+
+```bash
+python backend/scripts/seed_demo_runtime.py
+```
+
+This appends one demo fire alert and one demo smoke alert. It does not
+overwrite existing runtime data and it does not fabricate Run History;
+use `POST /risk/check` or the dashboard **Run Manual Check** button for
+a real operational row.
 
 ## Scheduler
 

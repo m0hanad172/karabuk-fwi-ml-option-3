@@ -171,18 +171,18 @@ Three ways to trigger a `manual` operational run:
 From the project root:
 
 ```bash
-python -m pytest backend/tests -v
+python -m pytest backend/tests -q
 ```
 
 Or from inside `backend/`:
 
 ```bash
 cd backend
-python -m pytest -v
+python -m pytest -q
 ```
 
 Both commands work — `backend/pytest.ini` sets `pythonpath = .` and
-`testpaths = tests`. Current baseline: **83 backend tests passing**.
+`testpaths = tests`. Current baseline: **97 backend tests passing**.
 
 Test runs use an isolated SQLite database via `KARABUK_DB_PATH` set in
 `backend/tests/conftest.py`, so they never pollute
@@ -219,6 +219,7 @@ returns the ring buffer (last 200 events). The dashboard polls every
 | `/system/health` | GET | Stage 1/2/DB healthcheck |
 | `/system/model` | GET | Model metadata + thresholds |
 | `/system/scheduler` | GET | APScheduler status + next runs |
+| `/system/config` | GET | Safe public runtime flags (`backend_env`, `service_mode`, `demo_alerts_enabled`, `version`) |
 | `/risk/check` | POST | Trigger an operational `manual` run |
 | `/risk/latest` | GET | Latest operational prediction |
 | `/history/runs` | GET | Paginated run history (used by Run History tab) |
@@ -235,6 +236,65 @@ returns the ring buffer (last 200 events). The dashboard polls every
 | `/monitoring/alerts/{id}` | GET | Single alert with bboxes (detail drawer) |
 | `/monitoring/alerts/test` | POST | Append a synthetic alert (demo / smoke-test) |
 | `/monitoring/.../feed` | misc | MJPEG streams |
+
+## 9A. Docker quick start
+
+```bash
+docker compose build
+docker compose up -d
+docker compose ps
+```
+
+- Backend: <http://localhost:8000>
+- Frontend: <http://localhost:3000>
+- Health: <http://localhost:8000/system/health>
+- Public config: <http://localhost:8000/system/config>
+
+Useful maintenance commands:
+
+```bash
+docker compose logs backend --tail=200
+docker compose logs frontend --tail=200
+docker compose restart
+docker compose down
+```
+
+Do not run `docker compose down -v` unless you deliberately want to
+delete the named volumes. `backend_outputs` stores the Docker SQLite DB
+and `backend_notifications` stores Docker alert JSONL/JPG evidence.
+
+The compose backend runs production-like (`BACKEND_ENV=production`, no
+Uvicorn reload) and explicitly enables demo alerts for local demo
+verification. Set `DEMO_ALERTS_ENABLED=false` for non-demo production.
+
+Camera/drone hardware is local-only unless you configure Docker device
+passthrough. Without devices, the monitoring/detection APIs and tabs
+still respond and should not crash.
+
+## 9B. Demo data and cleanup
+
+Fresh clones may start with empty Run History and Detection Alerts
+because runtime data is gitignored. To create demo Detection Alerts
+without private local data:
+
+```bash
+python backend/scripts/seed_demo_runtime.py
+```
+
+The script appends one fire and one smoke alert tagged `source="demo"`.
+It does not overwrite the active alert log or fabricate `run_history`;
+use the UI **Run Manual Check** button or `POST /risk/check` for a real
+run-history row.
+
+Cleanup is dry-run by default:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\cleanup_local.ps1
+powershell -ExecutionPolicy Bypass -File scripts\cleanup_local.ps1 -Apply
+```
+
+It removes caches/build output only and protects the active SQLite DB,
+Detection Alerts JSONL/JPGs, `.venv`, `node_modules`, and DB backups.
 
 ### Operational timing contract
 

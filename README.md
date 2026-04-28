@@ -318,7 +318,7 @@ No real secrets are required to run the project.
 From the project root:
 
 ```bash
-python -m pytest backend/tests -v
+python -m pytest backend/tests -q
 ```
 
 Or, equivalently, from inside `backend/`:
@@ -328,7 +328,7 @@ cd backend && python -m pytest -v
 ```
 
 Both commands work — `backend/pytest.ini` sets the right
-`pythonpath` and `testpaths`. Current baseline: **83 tests passing**.
+`pythonpath` and `testpaths`. Current baseline: **97 tests passing**.
 The suite covers prediction, API routes, monitoring, run-type
 taxonomy, JSON serialization safety, walk-forward training, and
 stacking. Tests redirect the SQLite DB to a temp file, so they never
@@ -354,6 +354,11 @@ hits every endpoint the dashboard consumes. Exit code is 0 on
 success and 1 on any failure, so it is safe to chain into a CI
 step or a git hook.
 
+GitHub Actions runs the backend pytest suite, the backend smoke check,
+the frontend production build, and `docker compose config` on push and
+pull request. Hardware camera/drone paths are intentionally not run in
+CI.
+
 ---
 
 ## Docker / deployment
@@ -365,8 +370,12 @@ deployment:
 - [`frontend/Dockerfile`](./frontend/Dockerfile)
 - [`docker-compose.yml`](./docker-compose.yml)
 
-These are conservative, opinionated starting points. They are
-**not yet smoke-tested in CI** — treat them as a roadmap. See
+These are conservative, opinionated starting points. They have been
+locally verified with `docker compose build`, `docker compose up -d`,
+backend health checks, frontend startup, manual FWI run, demo alert
+persistence, and restart persistence. CI validates compose syntax only;
+full image builds stay local/deployment because torch/ultralytics are
+large. See
 [`docs/DEPLOYMENT_PLAN.md`](./docs/DEPLOYMENT_PLAN.md) for the full
 deployment checklist (volumes for `backend/outputs/`, env-var
 contracts, image build commands, what is safe to do now vs. later).
@@ -378,6 +387,48 @@ docker compose up --build
 # Backend at  http://localhost:8000
 # Frontend at http://localhost:3000
 ```
+
+Useful Docker commands:
+
+```bash
+docker compose ps
+docker compose logs backend --tail=200
+docker compose logs frontend --tail=200
+docker compose restart
+docker compose down
+```
+
+Do not use `docker compose down -v` unless you deliberately want to
+reset the named volumes that store the runtime SQLite DB and detection
+evidence.
+
+Runtime data is local and gitignored:
+
+- SQLite run history: `backend/outputs/karabuk_fwi.db` locally,
+  `/app/outputs/karabuk_fwi.db` in Docker volume
+  `karabuk_fwi_backend_outputs`.
+- Detection alerts: `backend/data/notifications/alerts.jsonl` and
+  snapshots locally, `/app/data/notifications/` in Docker volume
+  `karabuk_fwi_backend_notifications`.
+- Fresh collaborators may start with empty Run History and Detection
+  Alerts. Run a manual check or use the optional demo seed script:
+  `python backend/scripts/seed_demo_runtime.py`.
+
+The compose file runs the backend in production-like mode
+(`BACKEND_ENV=production`, no reload) but explicitly enables demo
+alerts for local demo verification. Set `DEMO_ALERTS_ENABLED=false`
+before exposing the API beyond a trusted demo environment.
+
+Local cleanup is dry-run by default:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\cleanup_local.ps1
+powershell -ExecutionPolicy Bypass -File scripts\cleanup_local.ps1 -Apply
+```
+
+The cleanup helper removes caches and build output only; it never
+removes the active SQLite DB, alert JSONL/JPG evidence, `.venv`,
+`node_modules`, or DB backups.
 
 ---
 
@@ -486,7 +537,7 @@ backend mkdirs it lazily).
 | `GET /monitoring/alerts/summary` | `{ total, by_source, max_confidence, last_time_str, last_source, last_by_source }` — drives the summary tiles. |
 | `GET /monitoring/alerts/latest` | `{ alert: <single alert> | null }` — cheap poll target for the in-app notification banner. |
 | `GET /monitoring/alerts/{alert_id}` | One alert with the full per-detection list (label / confidence / bbox). |
-| `POST /monitoring/alerts/test?label=fire&confidence=0.78&source=demo` | Append a synthetic alert through the real persistence path. Useful when no camera/drone hardware is available — see the **Test alert** button in the Detection Alerts tab header. |
+| `POST /monitoring/alerts/test?label=fire&confidence=0.78&source=demo` | Append a synthetic alert through the real persistence path when `DEMO_ALERTS_ENABLED=true`. Useful when no camera/drone hardware is available; the frontend hides the **Test alert** button when `/system/config` reports demo alerts disabled. |
 | `GET /monitoring/notifications` | Recent ring-buffer view (subset of JSONL). |
 
 ### Dashboard notification banner
@@ -518,9 +569,9 @@ Or, from a shell (smoke / CI use):
 curl -X POST "http://localhost:8000/monitoring/alerts/test?label=smoke&confidence=0.91"
 ```
 
-To wipe demo alerts later, edit
-`backend/data/notifications/alerts.jsonl` and remove the lines with
-`"source": "demo"`. The JSONL file is gitignored runtime state.
+Demo alerts are tagged with `"source": "demo"` so they can be filtered
+or reviewed separately. Treat `alerts.jsonl` as runtime evidence: do
+not delete it as part of normal cleanup.
 
 ### Hardware unavailable
 

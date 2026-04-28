@@ -11,6 +11,10 @@ Karabük FWI Option 3 dashboard.
   the project root). `OUTPUTS_DIR` in `backend/configs/paths.py`
   resolves through `Path(__file__).resolve().parent.parent` and
   always lands on `backend/`.
+- **Docker path:** `/app/outputs/karabuk_fwi.db`, persisted by the
+  named volume `karabuk_fwi_backend_outputs`. `docker compose restart`
+  and `docker compose down` preserve it; `docker compose down -v`
+  deletes it.
 - **Test override:** `backend/tests/conftest.py` sets the
   `KARABUK_DB_PATH` environment variable to a temp file, so running
   `pytest` never writes into the production DB.
@@ -23,6 +27,14 @@ Karabük FWI Option 3 dashboard.
 The DB file is created on first use. `get_connection()` also enables
 WAL journal mode so concurrent reads from the API never block
 scheduler writes.
+
+The SQLite DB is runtime state and is gitignored. Fresh collaborators
+may start with an empty Run History; trigger **Run Manual Check** in the
+dashboard or `POST /risk/check` to create a real operational row.
+Detection Alerts are separate runtime state in
+`backend/data/notifications/alerts.jsonl` locally and
+`/app/data/notifications/` in Docker volume
+`karabuk_fwi_backend_notifications`.
 
 > **Migrating across the `backend/` restructure.** The DB path moved
 > from `outputs/karabuk_fwi.db` (legacy root) to
@@ -246,17 +258,20 @@ carry an offset are skipped — so it is safe to re-run.
 ## 9. Resetting the database (last resort)
 
 If the DB is corrupted or cluttered with experimental rows during
-development:
+development, stop the backend and back up the active DB first. This is
+destructive and should not be part of normal cleanup.
 
 ```powershell
 # Stop the backend first.
-del outputs\karabuk_fwi.db
-del outputs\karabuk_fwi.db-wal
-del outputs\karabuk_fwi.db-shm
+copy backend\outputs\karabuk_fwi.db backend\outputs\karabuk_fwi.db.manual.bak
+del backend\outputs\karabuk_fwi.db
+del backend\outputs\karabuk_fwi.db-wal
+del backend\outputs\karabuk_fwi.db-shm
 ```
 
 On next backend start `init_db()` recreates the schema. You lose all
-run history, so do not do this in production.
+run history, so do not do this in production. The cleanup helper never
+deletes active DBs or DB backups.
 
 A gentler option is to delete only the evaluation rows:
 

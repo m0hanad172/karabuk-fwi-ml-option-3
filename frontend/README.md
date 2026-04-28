@@ -37,8 +37,10 @@ The frontend reads a single environment variable:
 
 Copy [`.env.example`](./.env.example) to `.env.local` if you need to
 override it. Anything else (timezone display, polling intervals,
-thresholds) is sourced live from the backend — there is no second
-source of truth in the frontend.
+thresholds, demo alert availability) is sourced live from the backend
+— there is no second source of truth in the frontend. The Detection
+Alerts **Test alert** button is shown only when `GET /system/config`
+returns `demo_alerts_enabled=true`.
 
 ## Layout
 
@@ -67,13 +69,18 @@ The dashboard expects the FastAPI backend on the URL in
 `NEXT_PUBLIC_API_URL`. Start it from the repo root:
 
 ```bash
-python scripts/serve.py
+python backend/scripts/serve.py
 ```
 
 Health check: <http://localhost:8000/system/health>
 
 If the backend is unreachable, every tab renders an `ErrorAlert` with
 the underlying fetch error — that is intentional, not a frontend bug.
+
+Docker builds bake `NEXT_PUBLIC_API_URL` at build time. The local
+compose file uses `http://localhost:8000` because requests are made by
+the user's browser. Rebuild the frontend image after changing that
+value.
 
 ## Time / locale
 

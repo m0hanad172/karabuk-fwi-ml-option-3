@@ -6,10 +6,12 @@ server". The repo ships **starter Docker templates** so the structure
 is in place; this document tracks what is safe to do **now** vs
 **later**.
 
-> ⚠️ The Dockerfiles and `docker-compose.yml` in this repo are
-> conservative starting points and have **not yet been smoke-tested
-> end-to-end**. Treat them as a roadmap and validate before relying
-> on them in production.
+> The Dockerfiles and `docker-compose.yml` have been locally verified
+> with `docker compose build`, `docker compose up -d`, backend health,
+> frontend startup, manual FWI run, demo Detection Alert, remote smoke
+> check, and `docker compose restart` persistence. CI validates compose
+> syntax; full image builds stay local/deployment because
+> torch/ultralytics are large.
 
 ## Phase 0 — current state
 
@@ -18,7 +20,9 @@ is in place; this document tracks what is safe to do **now** vs
 - ✅ All trained models are committed (~8 MB total).
 - ✅ SQLite database is created automatically on first boot.
 - ✅ No paid API keys required (Open-Meteo is public).
-- ✅ 83 backend tests passing.
+- ✅ 97 backend tests passing.
+- ✅ GitHub Actions CI for backend tests, smoke check, frontend build,
+  and compose config.
 
 ## Phase 1 — local Docker (do this first when you start)
 
@@ -38,13 +42,15 @@ What to validate:
    load and the SQLite DB should appear under the `backend_outputs`
    volume.
 3. **Frontend image builds.** `docker compose build frontend`.
-4. **Frontend talks to backend over the compose network.** The
-   compose file sets `NEXT_PUBLIC_API_URL=http://backend:8000` for
-   the frontend container. Open the dashboard and confirm the
-   Overview tile populates.
+4. **Frontend talks to backend from the browser.** The compose file
+   builds the frontend with `NEXT_PUBLIC_API_URL=http://localhost:8000`
+   because dashboard requests originate in the user's browser, not
+   from the frontend container.
 5. **SQLite persistence survives a container restart.**
-   `docker compose down && docker compose up` — your `run_history`
-   rows should still be there.
+   `docker compose restart` — your `run_history` rows should still be
+   there. Use `docker compose down` to stop the stack, but avoid
+   `docker compose down -v` unless you deliberately want to delete the
+   runtime volumes.
 
 If any of those fail, fix the Dockerfile rather than working around
 it in shell.
@@ -59,8 +65,9 @@ Same compose file, but:
 - Mount the `backend/outputs/` volume to a host path you back up
   (e.g. `/srv/karabuk/outputs:/app/outputs`).
 - Run behind a reverse proxy (nginx / Caddy / Traefik) with TLS.
-- Tighten the FastAPI CORS allow-list — currently `["*"]` for dev
-  convenience.
+- Set `CORS_ORIGINS` to the real frontend origin(s). Production-like
+  modes never default to wildcard.
+- Set `DEMO_ALERTS_ENABLED=false` unless this is a trusted demo stack.
 - Set explicit `restart: unless-stopped` on both services.
 
 ## Phase 3 — multi-host or managed deployment (later)
@@ -79,10 +86,13 @@ Two things stop being trivial:
 
 ## Environment variables
 
-The system needs **almost no config**. There are only two:
+The system needs **almost no config**. The important variables are:
 
 | Variable | Service | Default | Purpose |
 |---|---|---|---|
+| `BACKEND_ENV` | backend | `development` locally, `production` in Docker | Controls reload defaults and production-like feature defaults |
+| `CORS_ORIGINS` | backend | `http://localhost:3000,http://127.0.0.1:3000` | FastAPI CORS allow-list |
+| `DEMO_ALERTS_ENABLED` | backend | `true` outside production, `false` in production unless explicitly set | Gates `POST /monitoring/alerts/test` and the frontend Test alert button |
 | `KARABUK_DB_PATH` | backend | `backend/outputs/karabuk_fwi.db` | Override SQLite path |
 | `NEXT_PUBLIC_API_URL` | frontend (build-time) | `http://localhost:8000` | Backend base URL |
 
@@ -92,16 +102,20 @@ In Docker:
   it must be set when you `docker build` the frontend (the compose
   file does this via `args:`).
 - `KARABUK_DB_PATH` should point inside the mounted volume.
+- `GET /system/config` exposes only safe public values:
+  `backend_env`, `service_mode`, `demo_alerts_enabled`, and `version`.
 
 ## Volumes / persistence
 
 | Path inside container | Mount | What it stores |
 |---|---|---|
 | `/app/outputs/` | named volume `backend_outputs` | SQLite DB, generated reports |
-| `/app/data/notifications/` | named volume `backend_notifications` (optional) | Detection evidence frames |
+| `/app/data/notifications/` | named volume `backend_notifications` | Detection alerts JSONL + snapshots |
 
 Everything in `backend/models/` and `backend/data/processed/` is
-copied into the image at build time — no volume needed.
+copied into the image at build time — no volume needed. Runtime
+notification JSONL/JPG files are excluded by `backend/.dockerignore`
+and must not be baked into images.
 
 ## Model files in Docker
 
@@ -124,13 +138,15 @@ either:
 - ✅ Ship the starter Dockerfiles + compose file (already in the repo).
 - ✅ Document the env var contract (this file).
 - ✅ Keep the SQLite path overridable via `KARABUK_DB_PATH`.
+- ✅ Verify local Docker build/run/restart behavior.
+- ✅ Add CI for backend/frontend checks and compose config.
 
 ### Do soon
 
-- Smoke-test `docker compose up --build` on the dev machine — once.
 - Pin Python and Node base images to specific patch versions.
-- Add a CI job that runs `python -m pytest backend/tests` on every
-  push.
+- Split Docker dependencies into a CPU-friendly backend image profile
+  so torch/ultralytics do not pull CUDA packages in vanilla Docker.
+- Add reverse proxy/TLS and production logging.
 
 ### Defer
 
@@ -144,10 +160,10 @@ either:
 
 ## Pre-flight checklist (when you do go live)
 
-- [ ] Replace `allow_origins=["*"]` in `backend/src/api/main.py` with
-      the real frontend origin.
-- [ ] Set `reload=False` in `backend/scripts/serve.py` (it is `True`
-      for dev).
+- [ ] Set `CORS_ORIGINS` to the real frontend origin.
+- [ ] Confirm `DEMO_ALERTS_ENABLED=false` unless explicitly demoing.
+- [ ] Confirm backend starts with `BACKEND_ENV=production` and no
+      Uvicorn reload.
 - [ ] Bind to `0.0.0.0` only behind a reverse proxy.
 - [ ] Schedule a backup of the `backend_outputs` volume.
 - [ ] Confirm Open-Meteo egress from production network.
