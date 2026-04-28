@@ -60,6 +60,7 @@ data/interim/
 # do not want every detection to dirty the working tree. A handful of
 # already-tracked samples are kept as demo evidence; new ones are ignored.
 backend/data/notifications/*.jsonl
+backend/data/notifications/alerts_read_state.json*
 backend/data/notifications/*.jpg
 backend/data/notifications/*.jpeg
 backend/data/notifications/*.png

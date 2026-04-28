@@ -404,3 +404,122 @@ class TestDemoAlertGating:
         assert cfg["demo_alerts_enabled"] is False
         assert cfg["backend_env"] == "production"
         assert cfg["service_mode"] == "production"
+
+
+class TestDetectionAlertsReadState:
+    """Coverage for the read/unread sidecar (Option A persistence).
+
+    Each alert is unread by default; ``mark-read`` flips a single
+    alert; ``mark-all-read`` flips every currently-unread alert in
+    one shot. Sidecar state survives backend restarts because the
+    file lives next to the JSONL evidence log."""
+
+    def test_new_alert_is_unread_by_default(self, client):
+        notif.clear_notifications()
+        a = client.post("/monitoring/alerts/test").json()
+        assert a["read"] is False
+        assert a["read_at"] is None
+
+    def test_summary_reports_unread_and_read_counts(self, client):
+        notif.clear_notifications()
+        a1 = client.post("/monitoring/alerts/test").json()
+        client.post("/monitoring/alerts/test")
+        client.post("/monitoring/alerts/test")
+        s = client.get("/monitoring/alerts/summary").json()
+        assert s["total"] == 3
+        assert s["unread_count"] == 3
+        assert s["read_count"] == 0
+        # mark one read → counts shift
+        r = client.post(f"/monitoring/alerts/{a1['id']}/read")
+        assert r.status_code == 200
+        assert r.json()["read"] is True
+        s2 = client.get("/monitoring/alerts/summary").json()
+        assert s2["unread_count"] == 2
+        assert s2["read_count"] == 1
+
+    def test_filter_unread_and_read(self, client):
+        notif.clear_notifications()
+        a1 = client.post("/monitoring/alerts/test").json()
+        client.post("/monitoring/alerts/test")
+        client.post(f"/monitoring/alerts/{a1['id']}/read")
+        unread = client.get(
+            "/monitoring/alerts?filter=unread"
+        ).json()["alerts"]
+        read = client.get(
+            "/monitoring/alerts?filter=read"
+        ).json()["alerts"]
+        assert len(unread) == 1
+        assert all(a["read"] is False for a in unread)
+        assert len(read) == 1
+        assert all(a["read"] is True for a in read)
+
+    def test_mark_all_read_flips_only_unread(self, client):
+        notif.clear_notifications()
+        a1 = client.post("/monitoring/alerts/test").json()
+        client.post("/monitoring/alerts/test")
+        client.post("/monitoring/alerts/test")
+        # Pre-read one so mark-all-read should flip exactly two.
+        client.post(f"/monitoring/alerts/{a1['id']}/read")
+        r = client.post("/monitoring/alerts/mark-all-read")
+        assert r.status_code == 200
+        assert r.json()["flipped"] == 2
+        s = client.get("/monitoring/alerts/summary").json()
+        assert s["unread_count"] == 0
+        assert s["read_count"] == s["total"]
+
+    def test_mark_unread_reverts(self, client):
+        notif.clear_notifications()
+        a = client.post("/monitoring/alerts/test").json()
+        client.post(f"/monitoring/alerts/{a['id']}/read")
+        client.post(f"/monitoring/alerts/{a['id']}/unread")
+        s = client.get("/monitoring/alerts/summary").json()
+        assert s["unread_count"] == 1
+        assert s["read_count"] == 0
+
+    def test_mark_read_404_for_unknown_id(self, client):
+        notif.clear_notifications()
+        r = client.post("/monitoring/alerts/does-not-exist/read")
+        assert r.status_code == 404
+
+    def test_read_state_persists_across_module_lookups(self, client):
+        # Simulates a backend restart: the JSONL file + sidecar JSON
+        # are on disk, the in-memory ring buffer can be empty, and the
+        # API still answers correctly because it reads the sidecar
+        # fresh on every call.
+        notif.clear_notifications()
+        a = client.post("/monitoring/alerts/test").json()
+        client.post(f"/monitoring/alerts/{a['id']}/read")
+        # Force an in-memory wipe — the sidecar file is the source of truth.
+        notif._notifications.clear()
+        s = client.get("/monitoring/alerts/summary").json()
+        assert s["read_count"] == 1
+        again = client.get(f"/monitoring/alerts/{a['id']}").json()
+        assert again["read"] is True
+        assert again["read_at"]
+
+
+class TestMonitoringRuntime:
+    """``/monitoring/runtime`` is what the Monitoring tab uses to render
+    the right unavailable-camera copy. We can't toggle in-Docker for a
+    pytest run on the host, but we can pin the env-driven hint."""
+
+    def test_runtime_endpoint_shape(self, client):
+        r = client.get("/monitoring/runtime")
+        assert r.status_code == 200
+        data = r.json()
+        assert set(data.keys()) >= {
+            "in_docker",
+            "host_os",
+            "camera_passthrough_supported",
+        }
+        assert isinstance(data["in_docker"], bool)
+        assert data["host_os"] in {"windows", "posix"}
+
+    def test_production_env_marks_in_docker_true(self, client, monkeypatch):
+        monkeypatch.setenv("BACKEND_ENV", "production")
+        data = client.get("/monitoring/runtime").json()
+        assert data["in_docker"] is True
+        # On Windows host this is False (the actual hint shown to
+        # the user); on Linux it's True.
+        if data["host_os"] == "windows":
+            assert data["camera_passthrough_supported"] is False

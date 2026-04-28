@@ -64,7 +64,27 @@ async def camera_devices():
         "devices": cams.discover_devices(),
         "inference_stride": cams.INFERENCE_STRIDE,
         "capture_fps_cap": cams.CAPTURE_FPS_CAP,
+        "runtime": cams.runtime_context(),
     }
+
+
+@router.get(
+    "/runtime",
+    summary="Where the backend is running (host OS / inside Docker / "
+            "camera passthrough supported?)",
+)
+async def monitoring_runtime():
+    """Tiny helper the Monitoring tab calls so it can render the
+    correct unavailable-camera copy.
+
+    Returns:
+      ``in_docker``                       — boolean
+      ``host_os``                         — "windows" / "posix"
+      ``camera_passthrough_supported``    — false on "Docker Desktop
+                                            on Windows", true everywhere
+                                            host cameras can be reached
+    """
+    return cams.runtime_context()
 
 
 @router.post(
@@ -172,11 +192,22 @@ async def list_alerts(
     offset: int = Query(0, ge=0),
     source: str | None = Query(
         None,
-        description="Optional source filter — drone / webcam / pc_camera",
+        description="Optional source filter — drone / webcam / pc_camera / demo",
+    ),
+    read_filter: str | None = Query(
+        None,
+        alias="filter",
+        pattern="^(all|unread|read)$",
+        description=(
+            "Optional read-state filter: 'all' (default), 'unread', or 'read'. "
+            "Backed by the alerts_read_state.json sidecar."
+        ),
     ),
 ):
     return {
-        "alerts": notif.list_alerts(limit=limit, offset=offset, source=source),
+        "alerts": notif.list_alerts(
+            limit=limit, offset=offset, source=source, read_filter=read_filter
+        ),
     }
 
 
@@ -251,6 +282,44 @@ async def alerts_test(
     return notif.add_demo_alert(
         label=label, confidence=confidence, source=source
     )
+
+
+@router.post(
+    "/alerts/mark-all-read",
+    summary="Mark every detection alert as read",
+)
+async def alerts_mark_all_read():
+    """Flip every currently-unread alert to read in one shot.
+
+    Returns the count of alerts whose state actually changed (the
+    "Marked N alert(s) as read." copy on the frontend uses this).
+    Listed BEFORE the ``/alerts/{alert_id}`` route so FastAPI does not
+    interpret ``"mark-all-read"`` as an alert id.
+    """
+    flipped = notif.mark_all_alerts_read()
+    return {"flipped": flipped}
+
+
+@router.post(
+    "/alerts/{alert_id}/read",
+    summary="Mark a single detection alert as read",
+)
+async def alert_mark_read(alert_id: str):
+    alert = notif.mark_alert_read(alert_id)
+    if alert is None:
+        raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
+    return alert
+
+
+@router.post(
+    "/alerts/{alert_id}/unread",
+    summary="Re-flag a previously-read alert as unread",
+)
+async def alert_mark_unread(alert_id: str):
+    alert = notif.mark_alert_unread(alert_id)
+    if alert is None:
+        raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
+    return alert
 
 
 @router.get(

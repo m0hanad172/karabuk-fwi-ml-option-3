@@ -92,18 +92,23 @@ def _isolated_notifications_dir():
     """
     tmp_dir = _make_test_dir("notifications")
 
-    # Patch both the module-level constants in src.monitoring.notifications.
+    # Patch the module-level constants in src.monitoring.notifications.
     # `NOTIFICATIONS_DIR` is used by ``_ensure_dir`` / ``save_snapshot``;
-    # ``ALERTS_LOG_PATH`` is the JSONL evidence log path.
+    # ``ALERTS_LOG_PATH`` is the JSONL evidence log path; and
+    # ``ALERTS_READ_STATE_PATH`` is the sidecar JSON used for the
+    # Detection Alerts read/unread feature.
     from src.monitoring import notifications as notif
 
     orig_dir = notif.NOTIFICATIONS_DIR
     orig_log = notif.ALERTS_LOG_PATH
+    orig_state = notif.ALERTS_READ_STATE_PATH
     notif.NOTIFICATIONS_DIR = tmp_dir
     notif.ALERTS_LOG_PATH = tmp_dir / "alerts.jsonl"
+    notif.ALERTS_READ_STATE_PATH = tmp_dir / "alerts_read_state.json"
     try:
         yield tmp_dir
     finally:
         notif.NOTIFICATIONS_DIR = orig_dir
         notif.ALERTS_LOG_PATH = orig_log
+        notif.ALERTS_READ_STATE_PATH = orig_state
         _best_effort_rmtree(tmp_dir)

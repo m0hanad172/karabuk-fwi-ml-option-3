@@ -25,6 +25,7 @@ import {
   type CameraDevice,
   type CameraStatus,
   type DroneMonitoringStatus,
+  type MonitoringRuntime,
   type MonitoringNotification,
 } from "@/lib/api";
 import { formatIstanbulTime } from "@/lib/time";
@@ -221,6 +222,7 @@ export function MonitoringDrone() {
 
 function DevicesDetectedStrip() {
   const [devices, setDevices] = useState<CameraDevice[]>([]);
+  const [runtime, setRuntime] = useState<MonitoringRuntime | null>(null);
   const [loading, setLoading] = useState(false);
   const [autoBusy, setAutoBusy] = useState(false);
   const [autoMsg, setAutoMsg] = useState<string | null>(null);
@@ -231,8 +233,14 @@ function DevicesDetectedStrip() {
     try {
       const r = await api.discoverDevices();
       setDevices(r.devices);
+      if (r.runtime) setRuntime(r.runtime);
     } catch {
       // Non-critical — device probe is a helper, not a blocker.
+      try {
+        setRuntime(await api.getMonitoringRuntime());
+      } catch {
+        // Runtime copy is advisory only.
+      }
     } finally {
       setLoading(false);
     }
@@ -345,7 +353,7 @@ function DevicesDetectedStrip() {
         <p className="text-[11px] text-muted-foreground">
           {loading
             ? "Probing local camera indices…"
-            : "Camera is unavailable in this runtime. For webcam monitoring, run the backend locally or configure Docker device passthrough."}
+            : cameraUnavailableCopy(runtime)}
         </p>
       ) : (
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -616,8 +624,9 @@ function CameraFeedCard({
   // Extract a string error from the structured CameraError object.
   const camError = status?.last_error
     ? typeof status.last_error === "object"
-      ? status.last_error.code === "device_not_found"
-        ? "Camera is unavailable in this runtime. For webcam monitoring, run the backend locally or configure Docker device passthrough."
+      ? status.last_error.code === "device_not_found" ||
+        status.last_error.code === "docker_camera_unavailable"
+        ? cameraUnavailableCopy()
         : status.last_error.message
       : String(status.last_error)
     : null;
@@ -637,6 +646,13 @@ function CameraFeedCard({
       inferenceFps={status?.inference_fps}
     />
   );
+}
+
+function cameraUnavailableCopy(runtime?: MonitoringRuntime | null): string {
+  if (runtime?.in_docker && !runtime.camera_passthrough_supported) {
+    return "Camera is unavailable in Docker. For webcam monitoring, run the backend locally or configure Docker device passthrough.";
+  }
+  return "Camera is unavailable in this runtime. Check device connection, permissions, or run the backend locally for webcam monitoring.";
 }
 
 // ---------- Shared feed card -----------------------------------------------

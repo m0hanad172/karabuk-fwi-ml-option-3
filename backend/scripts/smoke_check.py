@@ -56,10 +56,12 @@ DASHBOARD_ENDPOINTS = [
     "/drone/state",
     "/monitoring/notifications",
     "/monitoring/alerts?limit=5",
+    "/monitoring/alerts?filter=unread&limit=5",
     "/monitoring/alerts/summary",
     "/monitoring/alerts/latest",
     "/monitoring/cameras",
     "/monitoring/drone/status",
+    "/monitoring/runtime",
 ]
 ACCEPTABLE_EMPTY_STATE_STATUS = {
     "/risk/latest": {404},

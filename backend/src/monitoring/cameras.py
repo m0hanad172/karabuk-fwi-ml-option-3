@@ -44,6 +44,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Generator
 
 from src.monitoring import camera_mapping
@@ -139,9 +140,59 @@ CAMERA_UNAVAILABLE_MESSAGE = (
     "Camera is unavailable in this runtime. For webcam monitoring, "
     "run the backend locally or configure Docker device passthrough."
 )
+DOCKER_CAMERA_MESSAGE = (
+    "Camera passthrough is not configured for this Docker container. "
+    "Docker Desktop on Windows cannot access the host webcam — run "
+    "`python backend/scripts/serve.py` directly on your host to use "
+    "the camera, or pass `--device /dev/video0:/dev/video0` to the "
+    "backend service on a Linux host."
+)
+
+
+def runtime_context() -> dict[str, object]:
+    return _runtime_context()
+
+
+def _runtime_context() -> dict[str, object]:
+    """Best-effort detection of where the backend is running.
+
+    The frontend uses this to render runtime-specific copy on the
+    Monitoring tab — e.g. a clean "Docker on Windows host: cameras
+    cannot be reached" panel rather than a confusing
+    `device_not_found` error.
+
+    Detection rules (in order):
+      - ``BACKEND_ENV=production`` is the compose default for this project.
+      - ``/.dockerenv`` exists → definitely a container.
+      - ``/dev/video*`` exists → a Linux container/host has a camera device
+        passed through.
+      - ``os.name == "nt"`` → host process is Windows, so DSHOW indices apply.
+    """
+    in_docker = (
+        os.environ.get("BACKEND_ENV", "").strip().lower() == "production"
+        or Path("/.dockerenv").exists()
+    )
+    has_linux_video_device = (
+        os.name != "nt"
+        and Path("/dev").exists()
+        and any(Path("/dev").glob("video*"))
+    )
+    return {
+        "in_docker": in_docker,
+        "host_os": "windows" if os.name == "nt" else "posix",
+        "camera_passthrough_supported": (
+            (not in_docker) or has_linux_video_device
+        ),
+    }
 
 
 def _camera_unavailable_error(index: int) -> CameraError:
+    ctx = _runtime_context()
+    if ctx["in_docker"] and not ctx["camera_passthrough_supported"]:
+        return CameraError(
+            code="docker_camera_unavailable",
+            message=f"{DOCKER_CAMERA_MESSAGE} OpenCV index: {index}.",
+        )
     return CameraError(
         code="device_not_found",
         message=f"{CAMERA_UNAVAILABLE_MESSAGE} OpenCV index: {index}.",

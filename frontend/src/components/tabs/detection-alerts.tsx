@@ -4,11 +4,13 @@ import {
   Bell,
   Camera,
   Cctv,
+  CheckCheck,
   Filter,
   FlaskConical,
   Gauge,
   Hash,
   ImageIcon,
+  Mail,
   Plane,
   RefreshCw,
   X,
@@ -53,9 +55,13 @@ import { api, apiUrl, type DetectionAlert } from "@/lib/api";
  *  - Alerts table with source badge, snapshot thumb, confidence bar
  *  - Click-to-open detail drawer with the full snapshot + bbox list
  */
+type ReadFilter = "all" | "unread" | "read";
+
 export function DetectionAlerts() {
   const [sourceFilter, setSourceFilter] = useState<string | null>(null);
+  const [readFilter, setReadFilter] = useState<ReadFilter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [markingAll, setMarkingAll] = useState(false);
 
   const summary = useApi(
     () => api.getDetectionAlertsSummary(),
@@ -63,8 +69,14 @@ export function DetectionAlerts() {
     15_000,
   );
   const alerts = useApi(
-    () => api.listDetectionAlerts(200, 0, sourceFilter ?? undefined),
-    [sourceFilter],
+    () =>
+      api.listDetectionAlerts(
+        200,
+        0,
+        sourceFilter ?? undefined,
+        readFilter,
+      ),
+    [sourceFilter, readFilter],
     15_000,
   );
   // Runtime feature flag: backend-driven, not a build-time NEXT_PUBLIC_*
@@ -80,6 +92,30 @@ export function DetectionAlerts() {
     // deps intentionally omitted — refetch is stable
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const markOneRead = useCallback(
+    async (id: string) => {
+      try {
+        await api.markDetectionAlertRead(id);
+      } catch {
+        // Best effort: a failed mark-as-read is not user-fatal — the
+        // unread badge will still reflect server truth on next poll.
+      }
+      refetchAll();
+    },
+    [refetchAll],
+  );
+
+  const markAllRead = useCallback(async () => {
+    setMarkingAll(true);
+    try {
+      await api.markAllDetectionAlertsRead();
+    } catch {
+      // see above
+    }
+    setMarkingAll(false);
+    refetchAll();
+  }, [refetchAll]);
 
   const rows = alerts.data?.alerts ?? [];
   const summaryData = summary.data;
@@ -180,10 +216,19 @@ export function DetectionAlerts() {
         ) : summaryData ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <SummaryTile
-              eyebrow="Total alerts"
-              value={String(summaryData.total)}
+              eyebrow="Alerts"
+              value={
+                summaryData.unread_count > 0
+                  ? `${summaryData.unread_count} unread`
+                  : "All read"
+              }
+              caption={`of ${summaryData.total} total`}
               icon={<Hash className="h-4 w-4" />}
-              accent="var(--primary)"
+              accent={
+                summaryData.unread_count > 0
+                  ? "var(--destructive)"
+                  : "var(--primary)"
+              }
             />
             <SummaryTile
               eyebrow="Highest confidence"
@@ -224,7 +269,7 @@ export function DetectionAlerts() {
       </div>
 
       {/* ---------- Filter pills ---------- */}
-      <div className="ent-card p-4">
+      <div className="ent-card p-4 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[11px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mr-2">
             <Filter className="h-3 w-3" aria-hidden />
@@ -257,6 +302,48 @@ export function DetectionAlerts() {
             count={totalBySource.pc_camera}
             icon={<Camera className="h-3 w-3" aria-hidden />}
           />
+        </div>
+        {/* Read-state filter + bulk action. Backed by the read-state
+            sidecar at backend/data/notifications/alerts_read_state.json
+            so unread/read state survives backend restarts. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mr-2">
+            <Mail className="h-3 w-3" aria-hidden />
+            Read state
+          </span>
+          <FilterPill
+            active={readFilter === "all"}
+            onClick={() => setReadFilter("all")}
+            label="All"
+            count={summaryData?.total}
+          />
+          <FilterPill
+            active={readFilter === "unread"}
+            onClick={() => setReadFilter("unread")}
+            label="Unread"
+            count={summaryData?.unread_count}
+          />
+          <FilterPill
+            active={readFilter === "read"}
+            onClick={() => setReadFilter("read")}
+            label="Read"
+            count={summaryData?.read_count}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            disabled={
+              markingAll ||
+              !summaryData ||
+              summaryData.unread_count === 0
+            }
+            onClick={markAllRead}
+            title="Mark every detection alert as read."
+          >
+            <CheckCheck className="h-3.5 w-3.5 mr-1.5" />
+            Mark all as read
+          </Button>
         </div>
       </div>
 
@@ -320,6 +407,7 @@ export function DetectionAlerts() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-8" aria-label="Read state" />
                     <TableHead className="w-20">Snapshot</TableHead>
                     <TableHead>Source</TableHead>
                     <TableHead>Time (Istanbul)</TableHead>
@@ -327,6 +415,7 @@ export function DetectionAlerts() {
                     <TableHead className="text-right w-[12rem]">
                       Max confidence
                     </TableHead>
+                    <TableHead className="w-10" aria-label="Mark as read" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -334,7 +423,13 @@ export function DetectionAlerts() {
                     <AlertRow
                       key={alert.id}
                       alert={alert}
-                      onOpen={() => setSelectedId(alert.id)}
+                      onOpen={() => {
+                        setSelectedId(alert.id);
+                        // Opening the detail drawer counts as reading the
+                        // alert. No-op if already read.
+                        if (!alert.read) markOneRead(alert.id);
+                      }}
+                      onMarkRead={() => markOneRead(alert.id)}
                     />
                   ))}
                 </TableBody>
@@ -501,9 +596,11 @@ function FilterPill({
 function AlertRow({
   alert,
   onOpen,
+  onMarkRead,
 }: {
   alert: DetectionAlert;
   onOpen: () => void;
+  onMarkRead: () => void;
 }) {
   const confidencePct = Math.max(0, Math.min(alert.max_confidence, 1));
   const accent =
@@ -512,12 +609,34 @@ function AlertRow({
       : confidencePct >= 0.5
         ? "var(--warning)"
         : "var(--success)";
+  const unread = !alert.read;
 
   return (
     <TableRow
-      className="cursor-pointer hover:bg-muted/50"
+      className={`cursor-pointer hover:bg-muted/50 ${unread ? "font-semibold" : ""}`}
       onClick={onOpen}
+      style={
+        unread
+          ? {
+              // A subtle left accent strip is a much less noisy "unread"
+              // signal than a full-row tint and matches the established
+              // mailbox idiom.
+              boxShadow: "inset 3px 0 0 0 var(--destructive)",
+            }
+          : undefined
+      }
     >
+      <TableCell aria-label={unread ? "Unread" : "Read"}>
+        <span
+          aria-hidden
+          className="inline-block h-2 w-2 rounded-full"
+          style={{
+            background: unread ? "var(--destructive)" : "transparent",
+            outline: unread ? "none" : "1px solid var(--border)",
+            outlineOffset: "1px",
+          }}
+        />
+      </TableCell>
       <TableCell>
         <AlertThumb image={alert.image} label={alert.source} />
       </TableCell>
@@ -549,6 +668,29 @@ function AlertRow({
             {(confidencePct * 100).toFixed(0)}%
           </span>
         </div>
+      </TableCell>
+      <TableCell
+        // Stop propagation so clicking the icon-button doesn't also open
+        // the detail drawer. The whole row stays clickable for "open".
+        onClick={(e) => e.stopPropagation()}
+        className="text-right"
+      >
+        {unread ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onMarkRead}
+            title="Mark as read"
+            className="h-8 w-8 p-0"
+          >
+            <CheckCheck className="h-4 w-4" aria-hidden />
+            <span className="sr-only">Mark as read</span>
+          </Button>
+        ) : (
+          <span aria-hidden className="text-[11px] text-muted-foreground">
+            ✓
+          </span>
+        )}
       </TableCell>
     </TableRow>
   );

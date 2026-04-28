@@ -151,10 +151,17 @@ export interface CameraDevice {
   assigned_to: string | null;
 }
 
+export interface MonitoringRuntime {
+  in_docker: boolean;
+  host_os: "windows" | "posix";
+  camera_passthrough_supported: boolean;
+}
+
 export interface CameraDevicesResponse {
   devices: CameraDevice[];
   inference_stride: number;
   capture_fps_cap: number;
+  runtime?: MonitoringRuntime;
 }
 
 export interface AutoDetectResult {
@@ -201,10 +208,17 @@ export interface DetectionBBox {
 
 export interface DetectionAlert extends MonitoringNotification {
   detections: DetectionBBox[];
+  // Sidecar read-state fields. Older payloads (clients that hit the
+  // backend before the read/unread feature was added) may not carry
+  // these — treat missing fields as "unread".
+  read?: boolean;
+  read_at?: string | null;
 }
 
 export interface DetectionAlertsSummary {
   total: number;
+  unread_count: number;
+  read_count: number;
   by_source: Record<string, number>;
   max_confidence: number | null;
   last_time_str: string | null;
@@ -275,16 +289,35 @@ export const api = {
     limit = 100,
     offset = 0,
     source?: string,
+    readFilter?: "all" | "unread" | "read",
   ) => {
     const params = new URLSearchParams({
       limit: String(limit),
       offset: String(offset),
     });
     if (source) params.set("source", source);
+    if (readFilter && readFilter !== "all") params.set("filter", readFilter);
     return fetchApi<{ alerts: DetectionAlert[] }>(
       `/monitoring/alerts?${params.toString()}`,
     );
   },
+  markDetectionAlertRead: (alertId: string) =>
+    fetchApi<DetectionAlert>(
+      `/monitoring/alerts/${alertId}/read`,
+      { method: "POST" },
+    ),
+  markDetectionAlertUnread: (alertId: string) =>
+    fetchApi<DetectionAlert>(
+      `/monitoring/alerts/${alertId}/unread`,
+      { method: "POST" },
+    ),
+  markAllDetectionAlertsRead: () =>
+    fetchApi<{ flipped: number }>(
+      "/monitoring/alerts/mark-all-read",
+      { method: "POST" },
+    ),
+  getMonitoringRuntime: () =>
+    fetchApi<MonitoringRuntime>("/monitoring/runtime"),
   getRuntimeConfig: () =>
     fetchApi<{
       backend_env: string;
