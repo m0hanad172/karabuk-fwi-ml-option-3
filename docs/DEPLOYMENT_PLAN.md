@@ -82,7 +82,10 @@ Two things stop being trivial:
    `/dev/video*` (Linux) or DSHOW indices (Windows). You can either
    run the monitoring layer on the host with `--device /dev/video0:
    /dev/video0`, or split it out into a separate "edge" service
-   that POSTs detection events to the API.
+   that POSTs detection events to the API. On Docker Desktop for
+   Windows, local webcam passthrough to a Linux container is not a
+   reliable default; keep live camera demos on the host backend unless
+   you deliberately configure and test device passthrough.
 
 ## Environment variables
 

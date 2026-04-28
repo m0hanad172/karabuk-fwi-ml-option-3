@@ -199,6 +199,26 @@ overwrite existing runtime data and it does not fabricate Run History;
 use `POST /risk/check` or the dashboard **Run Manual Check** button for
 a real operational row.
 
+## Monitoring cameras
+
+Camera feeds are backend-driven: OpenCV opens the device, the backend
+serves MJPEG at `/monitoring/cameras/{cam_id}/feed`, and the browser
+only displays that stream. The Monitoring tab never requests browser
+webcam permissions.
+
+On Windows, run the backend directly on the host for a live webcam demo:
+
+```bash
+python backend/scripts/serve.py
+```
+
+Then use the Monitoring tab's **Devices Detected** strip or
+`GET /monitoring/cameras/devices` to confirm the OpenCV indices. Docker
+Desktop on Windows does not expose physical webcams to Linux containers
+by default; in that runtime the camera cards should remain usable and
+show: "Camera is unavailable in this runtime. For webcam monitoring,
+run the backend locally or configure Docker device passthrough."
+
 ## Scheduler
 
 APScheduler boots two cron-style jobs in `Europe/Istanbul`:

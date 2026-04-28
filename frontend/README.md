@@ -1,8 +1,9 @@
 # Karabük FWI Dashboard (frontend)
 
 Next.js 16 + React 19 dashboard for the Karabük FWI Wildfire Risk
-Prediction system. Eight tabs: Overview, Impact & Context, Risk
-Decision, Features, Analytics, Run History, Monitoring, System.
+Prediction system. Current tabs: Overview, Impact & Context, Risk
+Decision, Features, Analytics, Run History, Monitoring, Detection
+Alerts, System Info, and System Flow.
 
 > ⚠️ This project pins **Next.js 16**. APIs and conventions differ from
 > older Next versions — see [AGENTS.md](./AGENTS.md). Read
@@ -81,6 +82,15 @@ Docker builds bake `NEXT_PUBLIC_API_URL` at build time. The local
 compose file uses `http://localhost:8000` because requests are made by
 the user's browser. Rebuild the frontend image after changing that
 value.
+
+## Monitoring tab
+
+The Monitoring tab displays backend MJPEG streams for Drone, Webcam,
+and PC Camera. It does not use browser webcam permissions. For live
+webcam demos on Windows, run the FastAPI backend locally on the host so
+OpenCV can access the device. In Docker on Windows, the dashboard should
+show a clean camera-unavailable state unless device passthrough is
+configured.
 
 ## Time / locale
 

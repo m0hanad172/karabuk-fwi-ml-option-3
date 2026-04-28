@@ -109,7 +109,8 @@ npm run dev
 - Dashboard: <http://localhost:3000>
 - Default landing: **Overview**
 - Sidebar order: Overview → Impact & Context → Risk Decision → Features
-  → Analytics → Run History → Monitoring → System
+  → Analytics → Run History → Monitoring → Detection Alerts → System Info
+  → System Flow
 
 The frontend reads `NEXT_PUBLIC_API_URL` (default
 `http://localhost:8000`) from `frontend/.env.local`. See
@@ -210,6 +211,19 @@ prediction — NOT by the detection layer.
 returns the ring buffer (last 200 events). The dashboard polls every
 5 seconds. Detection timestamps are always Istanbul-local.
 
+**Camera runtime:** camera capture happens in the FastAPI backend via
+OpenCV; the browser only displays the backend MJPEG stream. For a live
+webcam demo on Windows, run `python backend/scripts/serve.py` on the
+host and use **Devices Detected** / **Auto-detect** to map indices from
+`backend/data/camera_mapping.json`.
+
+**Docker note:** Docker Desktop on Windows usually cannot see the
+physical webcam without device passthrough. Docker remains the preferred
+path for prediction, dashboard, Run FWI, and Detection Alerts demos; use
+the local host backend when the demo specifically needs live camera
+hardware. When the camera is unavailable, the Monitoring tab should stay
+usable and show a camera-unavailable message instead of a broken stream.
+
 ---
 
 ## 9. Endpoints reference
@@ -295,6 +309,9 @@ powershell -ExecutionPolicy Bypass -File scripts\cleanup_local.ps1 -Apply
 
 It removes caches/build output only and protects the active SQLite DB,
 Detection Alerts JSONL/JPGs, `.venv`, `node_modules`, and DB backups.
+The old `.claude/` worktree directory is ignored and should be removed
+locally if it reappears; it is not part of the current Codex/main branch
+workflow.
 
 ### Operational timing contract
 

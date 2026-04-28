@@ -430,6 +430,10 @@ The cleanup helper removes caches and build output only; it never
 removes the active SQLite DB, alert JSONL/JPG evidence, `.venv`,
 `node_modules`, or DB backups.
 
+The old `.claude/` worktree folder is not part of the current project
+workflow. It is ignored and should be removed locally if it appears;
+the active workflow is the normal Git `main` branch plus Codex changes.
+
 ---
 
 ## Common errors and fixes
@@ -452,6 +456,18 @@ Restart `npm run dev` after editing `frontend/.env.local`.
 The monitoring layer is optional. Comment out the `ultralytics`,
 `opencv-python` and `djitellopy` lines in `backend/requirements.txt`
 if you only need the prediction backend.
+
+**Monitoring camera feed is unavailable.**
+The Monitoring tab uses backend OpenCV capture and backend MJPEG
+streams, not browser webcam permission prompts. Locally on Windows,
+run the backend on the host with `python backend/scripts/serve.py` and
+use **Devices Detected** / **Auto-detect** to map OpenCV indices. In
+Docker on Windows, physical webcam passthrough is not available by
+default; the tab should show: "Camera is unavailable in this runtime.
+For webcam monitoring, run the backend locally or configure Docker
+device passthrough."
+Prediction, Run FWI, Detection Alerts, and existing evidence remain
+usable even when camera hardware is unavailable.
 
 **`backend/outputs/karabuk_fwi.db` is missing.**
 Created automatically on first backend boot. If the file is locked
@@ -576,13 +592,13 @@ not delete it as part of normal cleanup.
 ### Hardware unavailable
 
 If the camera / drone hardware isn't plugged in, the Monitoring tab
-shows hardware status (cameras list, drone status) and the
-Detection Alerts tab shows the existing JSONL evidence (or a clean
-empty state with the **Test alert** affordance). Neither tab
-crashes — every monitoring import in `backend/src/monitoring/` is
-optional and degrades gracefully (see
-`backend/configs/paths.py::FIRE_DETECTION_MODEL_PATH` and the
-ImportError-tolerant import of `cv2` in `notifications.py`).
+shows hardware status (camera indices, running/stopped state, drone
+status) and the professional unavailable message above. The Detection
+Alerts tab shows the existing JSONL evidence (or a clean empty state
+with the **Test alert** affordance). Neither tab crashes - every
+monitoring import in `backend/src/monitoring/` is optional and degrades
+gracefully (see `backend/configs/paths.py::FIRE_DETECTION_MODEL_PATH`
+and the ImportError-tolerant import of `cv2` in `notifications.py`).
 
 ### Troubleshooting: Detection Alerts is empty
 
