@@ -118,6 +118,13 @@ async def stop_camera(cam_id: str):
 async def camera_feed(cam_id: str):
     if cam_id not in cams.CAMERAS:
         raise HTTPException(status_code=404, detail=f"Camera {cam_id} not found")
+    status = cams.get_camera_status(cam_id)
+    if not status.get("running"):
+        detail = "Camera feed is stopped. Start the camera before opening the feed."
+        if status.get("last_error"):
+            detail = status["last_error"]
+            raise HTTPException(status_code=503, detail=detail)
+        raise HTTPException(status_code=409, detail=detail)
     return StreamingResponse(cams.mjpeg_generator(cam_id), media_type=_MJPEG_MEDIA)
 
 

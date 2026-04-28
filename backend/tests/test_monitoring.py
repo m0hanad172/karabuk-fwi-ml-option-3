@@ -31,10 +31,12 @@ def reset_state():
     """Ensure no background threads or notifications leak between tests."""
     for cam_id in list(cams.CAMERAS.keys()):
         cams.stop_camera(cam_id)
+        cams.CAMERAS[cam_id].last_error = None
     notif.clear_notifications()
     yield
     for cam_id in list(cams.CAMERAS.keys()):
         cams.stop_camera(cam_id)
+        cams.CAMERAS[cam_id].last_error = None
     notif.clear_notifications()
 
 
@@ -63,6 +65,36 @@ class TestCameraEndpoints:
     def test_camera_stop_unknown(self, client):
         r = client.post("/monitoring/cameras/nope/stop")
         assert r.status_code == 404
+
+    def test_camera_start_reports_unavailable_immediately(
+        self, client, monkeypatch
+    ):
+        error = cams.CameraError(
+            code="device_not_found",
+            message=cams.CAMERA_UNAVAILABLE_MESSAGE,
+        )
+        monkeypatch.setattr(cams, "_open_capture", lambda index: (None, error))
+
+        r = client.post("/monitoring/cameras/webcam/start")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["started"] is False
+        assert data["running"] is False
+        assert data["last_error"]["code"] == "device_not_found"
+        assert "Camera is unavailable" in data["last_error"]["message"]
+
+        status = client.get("/monitoring/cameras/webcam/status").json()
+        assert status["running"] is False
+        assert status["last_error"]["code"] == "device_not_found"
+
+        feed = client.get("/monitoring/cameras/webcam/feed")
+        assert feed.status_code == 503
+        assert feed.json()["detail"]["code"] == "device_not_found"
+
+    def test_camera_feed_stopped_returns_clear_status(self, client):
+        r = client.get("/monitoring/cameras/webcam/feed")
+        assert r.status_code == 409
+        assert "Start the camera" in r.json()["detail"]
 
 
 class TestDroneEndpoints:

@@ -42,7 +42,7 @@ import { cn } from "@/lib/utils";
  *   - notifications ring buffer polled every 5s
  *
  * Phase 5 improvements:
- *   - Optimistic UI: clicking Start immediately mounts the MJPEG <img>
+ *   - Feed state reconciles against backend status before mounting MJPEG
  *   - Devices Detected strip: probes local camera indices so the operator
  *     can see which slots are physically connected + their assignments
  *   - Structured error display: device_not_found vs opencv_missing
@@ -345,7 +345,7 @@ function DevicesDetectedStrip() {
         <p className="text-[11px] text-muted-foreground">
           {loading
             ? "Probing local camera indices…"
-            : "No camera devices detected. Connect a camera and click Re-probe."}
+            : "Camera is unavailable in this runtime. For webcam monitoring, run the backend locally or configure Docker device passthrough."}
         </p>
       ) : (
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -588,7 +588,7 @@ function CameraFeedCard({
   async function toggle() {
     setBusy(true);
     const wasRunning = running;
-    setOptimisticRunning(!wasRunning);
+    if (wasRunning) setOptimisticRunning(false);
     try {
       const s = wasRunning
         ? await api.stopCamera(camId)
@@ -616,7 +616,9 @@ function CameraFeedCard({
   // Extract a string error from the structured CameraError object.
   const camError = status?.last_error
     ? typeof status.last_error === "object"
-      ? status.last_error.message
+      ? status.last_error.code === "device_not_found"
+        ? "Camera is unavailable in this runtime. For webcam monitoring, run the backend locally or configure Docker device passthrough."
+        : status.last_error.message
       : String(status.last_error)
     : null;
 

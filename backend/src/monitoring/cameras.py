@@ -135,6 +135,39 @@ except Exception as _e:  # noqa: BLE001 — never let a corrupt mapping
 # probe is treated as "probably the BRIO"; anything below that is treated
 # as the built-in. Used by ``auto_detect_cameras``.
 _BRIO_MIN_WIDTH = 1920
+CAMERA_UNAVAILABLE_MESSAGE = (
+    "Camera is unavailable in this runtime. For webcam monitoring, "
+    "run the backend locally or configure Docker device passthrough."
+)
+
+
+def _camera_unavailable_error(index: int) -> CameraError:
+    return CameraError(
+        code="device_not_found",
+        message=f"{CAMERA_UNAVAILABLE_MESSAGE} OpenCV index: {index}.",
+    )
+
+
+def _open_capture(index: int):
+    """Open a camera with the best backend for the current runtime."""
+    try:
+        import cv2
+    except ImportError as e:
+        return None, CameraError(
+            code="opencv_missing", message=f"opencv not installed: {e}"
+        )
+
+    if os.name == "nt":
+        cap = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            cap.release()
+            cap = cv2.VideoCapture(index)
+    else:
+        cap = cv2.VideoCapture(index)
+    if not cap.isOpened():
+        cap.release()
+        return None, _camera_unavailable_error(index)
+    return cap, None
 
 
 # ---------------------------------------------------------------------------
@@ -157,19 +190,9 @@ def _capture_loop(cam_id: str) -> None:
 
     state = CAMERAS[cam_id]
 
-    # On Windows the default backend can take 1–3 s to probe devices.
-    # CAP_DSHOW is faster for USB webcams; we fall back to the default
-    # backend if DSHOW rejects the device.
-    cap = cv2.VideoCapture(state.index, cv2.CAP_DSHOW)
-    if not cap.isOpened():
-        cap = cv2.VideoCapture(state.index)
-
-    if not cap.isOpened():
-        state.last_error = CameraError(
-            code="device_not_found",
-            message=f"Cannot open camera at index {state.index}. "
-                    f"Check that a device is connected and try Devices Detected.",
-        )
+    cap, open_error = _open_capture(state.index)
+    if cap is None:
+        state.last_error = open_error or _camera_unavailable_error(state.index)
         state.running = False
         logger.warning("Camera %s (%s): %s", cam_id, state.index, state.last_error.message)
         return
@@ -286,6 +309,23 @@ def start_camera(cam_id: str) -> bool:
     state = CAMERAS[cam_id]
     if state.running:
         return True
+
+    # Preflight the device before telling the frontend the feed is live.
+    # Without this, Docker/no-permission/no-device cases briefly report
+    # running=True while the capture thread fails in the background, which
+    # leaves the Monitoring tab showing a dead MJPEG image until the next
+    # status poll.
+    cap, open_error = _open_capture(state.index)
+    if cap is None:
+        state.running = False
+        state.last_error = open_error or _camera_unavailable_error(state.index)
+        state.frame = None
+        state.detections = []
+        state.capture_fps = 0.0
+        state.inference_fps = 0.0
+        return False
+    cap.release()
+
     state.running = True
     state.last_error = None
     state.frames_captured = 0
@@ -515,9 +555,12 @@ def discover_devices(max_index: int = 4) -> list[dict]:
         return out
 
     for idx in range(max_index):
-        cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
-        if not cap.isOpened():
-            cap.release()
+        if os.name == "nt":
+            cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+            if not cap.isOpened():
+                cap.release()
+                cap = cv2.VideoCapture(idx)
+        else:
             cap = cv2.VideoCapture(idx)
         opened = cap.isOpened()
         if opened:
