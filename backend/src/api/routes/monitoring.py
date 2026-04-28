@@ -18,11 +18,25 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
+from src.api.runtime_config import demo_alerts_enabled
 from src.monitoring import cameras as cams
 from src.monitoring import drone as drn
 from src.monitoring import notifications as notif
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
+
+
+def _demo_alerts_enabled() -> bool:
+    """Whether ``POST /monitoring/alerts/test`` is wired up.
+
+    Default: enabled. Production deployments that don't want a
+    public test endpoint can set ``DEMO_ALERTS_ENABLED=false``
+    (or ``BACKEND_ENV=production`` without explicitly enabling it).
+
+    The frontend reads the same flag through ``GET /system/config`` so
+    the Detection Alerts tab and this endpoint enable/disable together.
+    """
+    return demo_alerts_enabled()
 
 _MJPEG_MEDIA = "multipart/x-mixed-replace; boundary=frame"
 
@@ -213,7 +227,20 @@ async def alerts_test(
     you want a clean slate, delete them by editing
     ``backend/data/notifications/alerts.jsonl`` (the file is
     gitignored runtime state).
+
+    Returns 404 when ``DEMO_ALERTS_ENABLED=false`` (or under
+    ``BACKEND_ENV=production`` without an explicit enable) so the
+    endpoint is invisible to a production OpenAPI consumer.
     """
+    if not _demo_alerts_enabled():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Demo alerts are disabled in this environment. "
+                "Set DEMO_ALERTS_ENABLED=true (or BACKEND_ENV=development) "
+                "to re-enable."
+            ),
+        )
     return notif.add_demo_alert(
         label=label, confidence=confidence, source=source
     )

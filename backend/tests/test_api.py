@@ -70,6 +70,21 @@ class TestSystemEndpoints:
         r = client.get("/system/scheduler")
         assert r.status_code == 200
 
+    def test_public_runtime_config_is_safe(self, client, monkeypatch):
+        monkeypatch.setenv("BACKEND_ENV", "production")
+        monkeypatch.delenv("DEMO_ALERTS_ENABLED", raising=False)
+        r = client.get("/system/config")
+        assert r.status_code == 200
+        data = r.json()
+        assert data == {
+            "backend_env": "production",
+            "service_mode": "production",
+            "demo_alerts_enabled": False,
+            "version": "2.0.0",
+        }
+        assert "KARABUK_DB_PATH" not in data
+        assert "CORS_ORIGINS" not in data
+
 
 class TestHistoryEndpoints:
     def test_run_history_empty(self, client):

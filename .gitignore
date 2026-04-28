@@ -9,6 +9,7 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
+.tmp/
 .mypy_cache/
 .ruff_cache/
 .ipynb_checkpoints/
@@ -52,6 +53,8 @@ logs/
 # Raw / interim data is large or licensed — collaborators rebuild on demand
 backend/data/raw/
 backend/data/interim/
+data/raw/
+data/interim/
 
 # Live detection evidence — written every time a fire is detected, so we
 # do not want every detection to dirty the working tree. A handful of

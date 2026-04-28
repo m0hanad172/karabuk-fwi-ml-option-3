@@ -285,6 +285,13 @@ export const api = {
       `/monitoring/alerts?${params.toString()}`,
     );
   },
+  getRuntimeConfig: () =>
+    fetchApi<{
+      backend_env: string;
+      service_mode: string;
+      demo_alerts_enabled: boolean;
+      version: string;
+    }>("/system/config"),
   getDetectionAlertsSummary: () =>
     fetchApi<DetectionAlertsSummary>("/monitoring/alerts/summary"),
   getDetectionAlert: (alertId: string) =>

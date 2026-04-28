@@ -67,6 +67,12 @@ export function DetectionAlerts() {
     [sourceFilter],
     15_000,
   );
+  // Runtime feature flag: backend-driven, not a build-time NEXT_PUBLIC_*
+  // var, so flipping BACKEND_ENV / DEMO_ALERTS_ENABLED on the running
+  // backend immediately hides/shows the Test alert button without a
+  // frontend rebuild.
+  const runtimeConfig = useApi(() => api.getRuntimeConfig(), []);
+  const demoEnabled = runtimeConfig.data?.demo_alerts_enabled ?? false;
 
   const refetchAll = useCallback(() => {
     summary.refetch();
@@ -132,28 +138,32 @@ export function DetectionAlerts() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Demo trigger — useful when no camera/drone hardware is
-                connected. Appends a synthetic alert through the same
-                persistence path as a real YOLO detection so the
-                Detection Alerts tab, the in-app banner, and the
-                summary tiles can all be verified end-to-end. */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                try {
-                  await api.createTestDetectionAlert("fire", 0.78, "demo");
-                  refetchAll();
-                } catch {
-                  // Surfaces via the underlying summary/list error
-                  // states; nothing extra to do here.
-                }
-              }}
-              title="Append a synthetic 'fire' alert (source=demo) for testing the dashboard."
-            >
-              <FlaskConical className="h-3.5 w-3.5 mr-1.5" />
-              Test alert
-            </Button>
+            {/* Demo trigger: only rendered when the backend reports
+                demo_alerts_enabled=true (BACKEND_ENV=development OR
+                DEMO_ALERTS_ENABLED=true). Appends a synthetic alert
+                through the same persistence path as a real YOLO
+                detection so the Detection Alerts tab, the in-app
+                banner, and the summary tiles can all be verified
+                end-to-end. */}
+            {demoEnabled && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    await api.createTestDetectionAlert("fire", 0.78, "demo");
+                    refetchAll();
+                  } catch {
+                    // Surfaces via the underlying summary/list error
+                    // states; nothing extra to do here.
+                  }
+                }}
+                title="Append a synthetic 'fire' alert (source=demo) for testing the dashboard."
+              >
+                <FlaskConical className="h-3.5 w-3.5 mr-1.5" />
+                Test alert
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={refetchAll}>
               <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
               Refresh
@@ -289,9 +299,16 @@ export function DetectionAlerts() {
             <p>
               Alerts will appear here automatically when smoke or fire is
               detected. Start a drone or camera feed from the Monitoring
-              tab to begin watching, or click <strong>Test alert</strong>{" "}
-              above to append a synthetic alert and verify that the
-              dashboard notification flow is wired up end-to-end.
+              tab to begin watching
+              {demoEnabled ? (
+                <>
+                  , or click <strong>Test alert</strong> above to append a
+                  synthetic alert and verify that the dashboard notification
+                  flow is wired up end-to-end.
+                </>
+              ) : (
+                "."
+              )}
             </p>
           </div>
         ) : (

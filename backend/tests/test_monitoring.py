@@ -323,3 +323,52 @@ class TestDetectionAlertsLatestAndTest:
         r = client.get(f"/monitoring/alerts/{rid}")
         assert r.status_code == 200
         assert r.json()["id"] == rid
+
+
+class TestDemoAlertGating:
+    """The ``/alerts/test`` demo endpoint must be hideable in
+    production. The frontend's Test alert button reads the flag from
+    ``GET /system/config``, so the two surfaces enable/disable
+    together."""
+
+    def test_demo_endpoint_returns_404_when_disabled(self, client, monkeypatch):
+        monkeypatch.setenv("DEMO_ALERTS_ENABLED", "false")
+        r = client.post("/monitoring/alerts/test")
+        assert r.status_code == 404
+        assert "disabled" in r.json()["detail"].lower()
+
+    def test_demo_endpoint_disabled_under_production_env(self, client, monkeypatch):
+        # Production default: off, even without an explicit
+        # DEMO_ALERTS_ENABLED override.
+        monkeypatch.setenv("BACKEND_ENV", "production")
+        monkeypatch.delenv("DEMO_ALERTS_ENABLED", raising=False)
+        r = client.post("/monitoring/alerts/test")
+        assert r.status_code == 404
+
+    def test_demo_endpoint_enabled_when_flag_explicitly_true(
+        self, client, monkeypatch
+    ):
+        # Explicit override beats the env default.
+        monkeypatch.setenv("BACKEND_ENV", "production")
+        monkeypatch.setenv("DEMO_ALERTS_ENABLED", "true")
+        notif.clear_notifications()
+        r = client.post("/monitoring/alerts/test")
+        assert r.status_code == 200
+
+    def test_system_config_reports_flag(self, client, monkeypatch):
+        # Development default: enabled.
+        monkeypatch.setenv("BACKEND_ENV", "development")
+        monkeypatch.delenv("DEMO_ALERTS_ENABLED", raising=False)
+        cfg = client.get("/system/config").json()
+        assert cfg["backend_env"] == "development"
+        assert cfg["service_mode"] == "development"
+        assert cfg["demo_alerts_enabled"] is True
+        assert cfg["version"] == "2.0.0"
+
+        # Production default: disabled.
+        monkeypatch.setenv("BACKEND_ENV", "production")
+        monkeypatch.delenv("DEMO_ALERTS_ENABLED", raising=False)
+        cfg = client.get("/system/config").json()
+        assert cfg["demo_alerts_enabled"] is False
+        assert cfg["backend_env"] == "production"
+        assert cfg["service_mode"] == "production"

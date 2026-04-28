@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import json
-
 from fastapi import APIRouter
 
 from configs.paths import STAGE1_DIR, STAGE2_DIR, METADATA_DIR
 from configs.settings import CLASS_THRESHOLD, NEAR_THRESHOLD, DEFAULT_PROBABILITY_THRESHOLD
 from src.features.feature_schema import TRAINING_FEATURES, STAGE2_INPUT_FEATURES
 from src.api.db.models import ModelInfo, HealthStatus
+from src.api.runtime_config import public_runtime_config
 from src.api.services.scheduler import get_scheduler_status
 from src.api.time_utils import istanbul_now_iso
 
@@ -67,3 +67,25 @@ async def health_check():
 @router.get("/scheduler", summary="Get scheduler status")
 async def scheduler_status():
     return get_scheduler_status()
+
+
+@router.get(
+    "/config",
+    summary="Runtime feature flags exposed to the frontend",
+)
+async def runtime_config():
+    """Expose a tiny env-driven feature-flag object to the frontend.
+
+    Today this exposes environment/mode, version, and whether the demo
+    / test-alert affordance is enabled. It is the natural place for any
+    future frontend-visible toggle (e.g. monitoring hardware hints).
+
+    Why we expose this at runtime instead of baking
+    ``NEXT_PUBLIC_*`` build-time vars into the frontend image:
+    toggling a build-time var requires a rebuild, but toggling a
+    runtime backend env (e.g. before flipping CORS_ORIGINS for
+    production) should also flip whether the dashboard offers the
+    Test alert button; a single source of truth on the backend
+    avoids drift.
+    """
+    return public_runtime_config()

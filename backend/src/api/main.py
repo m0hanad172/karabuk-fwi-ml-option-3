@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from configs.paths import NOTIFICATIONS_DIR
 from src.api.db.database import init_db
+from src.api.runtime_config import APP_VERSION, resolve_cors_origins
 from src.api.services.scheduler import start_scheduler, stop_scheduler
 from src.api.routes import risk, weather, history, model, drone, monitoring
 from src.inference.predict import get_predictor
@@ -163,14 +164,26 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Karabuk FWI Wildfire Risk Prediction API",
     description="Option 3 Stacked Architecture — regression backbone with safety classifier support",
-    version="2.0.0",
+    version=APP_VERSION,
     lifespan=lifespan,
 )
 
+
+def _resolve_cors_origins() -> list[str]:
+    """Resolve the CORS allow-list from env-safe runtime defaults."""
+    origins = resolve_cors_origins()
+    return origins
+
+
+_cors_origins = _resolve_cors_origins()
+# allow_credentials=True is incompatible with allow_origins=["*"] per the
+# CORS spec; fall back gracefully so a misconfigured deploy still works.
+_cors_credentials = "*" not in _cors_origins
+logger.info("CORS allow_origins=%s allow_credentials=%s", _cors_origins, _cors_credentials)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -197,5 +210,5 @@ async def root():
     return {
         "service": "Karabuk FWI Wildfire Risk Prediction",
         "architecture": "Option 3 — Stacked (Regression + Safety Classifier)",
-        "version": "2.0.0",
+        "version": APP_VERSION,
     }

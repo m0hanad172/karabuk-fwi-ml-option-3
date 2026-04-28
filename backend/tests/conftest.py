@@ -10,7 +10,9 @@ reads at call time.
 from __future__ import annotations
 
 import os
+import shutil
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -18,11 +20,36 @@ import pytest
 # Make `src/` importable for every test without duplicating sys.path hacks.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_TEST_TMP_ROOT = _REPO_ROOT / ".tmp" / "pytest-runtime"
+
+
+def _make_test_dir(label: str) -> Path:
+    """Create a repo-local temp dir.
+
+    Some Windows environments deny access to the default OS temp tree
+    from sandboxed subprocesses. Keeping test runtime files under the
+    ignored workspace .tmp directory avoids that without touching the
+    operational SQLite DB or detection evidence log.
+    """
+    _TEST_TMP_ROOT.mkdir(parents=True, exist_ok=True)
+    path = _TEST_TMP_ROOT / f"{label}-{os.getpid()}-{uuid.uuid4().hex}"
+    path.mkdir(parents=True, exist_ok=False)
+    return path
+
+
+def _best_effort_rmtree(path: Path) -> None:
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+    except OSError:
+        pass
+
 
 @pytest.fixture(scope="session", autouse=True)
-def _isolated_test_db(tmp_path_factory):
+def _isolated_test_db():
     """Redirect every DB write in the test session to a temp file."""
-    tmp_db = tmp_path_factory.mktemp("db") / "karabuk_fwi_test.db"
+    tmp_dir = _make_test_dir("db")
+    tmp_db = tmp_dir / "karabuk_fwi_test.db"
     prev = os.environ.get("KARABUK_DB_PATH")
     os.environ["KARABUK_DB_PATH"] = str(tmp_db)
     try:
@@ -32,6 +59,7 @@ def _isolated_test_db(tmp_path_factory):
             os.environ.pop("KARABUK_DB_PATH", None)
         else:
             os.environ["KARABUK_DB_PATH"] = prev
+        _best_effort_rmtree(tmp_dir)
 
 
 @pytest.fixture(autouse=True)
@@ -53,7 +81,7 @@ def _reset_test_db():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _isolated_notifications_dir(tmp_path_factory):
+def _isolated_notifications_dir():
     """
     Redirect the monitoring notifications directory (and the JSONL
     evidence log inside it) to a temp path for the duration of the test
@@ -62,7 +90,7 @@ def _isolated_notifications_dir(tmp_path_factory):
     directory — polluting the operational evidence log and making the
     Detection Alerts tab show ghost test entries in dev.
     """
-    tmp_dir = tmp_path_factory.mktemp("notifications")
+    tmp_dir = _make_test_dir("notifications")
 
     # Patch both the module-level constants in src.monitoring.notifications.
     # `NOTIFICATIONS_DIR` is used by ``_ensure_dir`` / ``save_snapshot``;
@@ -78,3 +106,4 @@ def _isolated_notifications_dir(tmp_path_factory):
     finally:
         notif.NOTIFICATIONS_DIR = orig_dir
         notif.ALERTS_LOG_PATH = orig_log
+        _best_effort_rmtree(tmp_dir)
