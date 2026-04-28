@@ -124,7 +124,7 @@ def _check_database() -> list[str]:
         )
         tables = [r[0] for r in cur.fetchall()]
         print(f"  tables        : {tables}")
-        for required_table in ("run_history", "system_state"):
+        for required_table in ("run_history", "system_state", "detection_alerts"):
             if required_table not in tables:
                 failures.append(f"DB missing required table: {required_table}")
                 print(f"  [   FAIL ] table missing: {required_table}")
@@ -142,6 +142,16 @@ def _check_database() -> list[str]:
         if "system_state" in tables:
             cur.execute("SELECT COUNT(*) FROM system_state")
             print(f"  system_state  : {cur.fetchone()[0]} rows")
+        if "detection_alerts" in tables:
+            cur.execute(
+                "SELECT COUNT(*), SUM(is_read=0), SUM(is_read=1) "
+                "FROM detection_alerts"
+            )
+            total, unread, read = cur.fetchone()
+            print(
+                f"  detection_alerts: {total} rows  "
+                f"({unread or 0} unread / {read or 0} read)"
+            )
         conn.close()
     except sqlite3.DatabaseError as e:
         failures.append(f"could not open DB: {e}")

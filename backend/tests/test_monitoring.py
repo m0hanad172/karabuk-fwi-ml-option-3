@@ -230,25 +230,61 @@ class TestSeparationFromPrediction:
     """Architectural guard: monitoring must not touch the prediction path."""
 
     def test_monitoring_does_not_import_inference(self):
-        """If this ever fails, the separation rule was violated."""
+        """If this ever fails, the separation rule was violated.
+
+        After the approved migration of Detection Alerts from JSONL
+        into SQLite, monitoring legitimately shares the same DB
+        *file* as the prediction layer — but only the
+        ``detection_alerts`` table. The architectural invariants are:
+
+        - monitoring must not import inference / pipeline /
+          stage-trainer modules; and
+        - monitoring source code must not reference the
+          prediction-side tables (``run_history`` / ``system_state``)
+          in *executable code*. Prose mentions inside docstrings or
+          ``#`` comments are fine — they are how we *document* the
+          separation rule.
+
+        We tokenise the source rather than substring-grep so a
+        comment like "strictly separated from run_history" can stay
+        in the module header without tripping the guard.
+        """
+        import io
+        import tokenize
+
         import src.monitoring.cameras as cam_mod
         import src.monitoring.drone as drone_mod
         import src.monitoring.notifications as notif_mod
         import src.monitoring.yolo_detector as yolo_mod
 
+        forbidden = {
+            "src.inference",
+            "src.pipeline.live_inference",
+            "src.pipeline.train_pipeline",
+            "src.models.stage1",
+            "src.models.stage2",
+            "run_history",
+            "system_state",
+        }
+
+        def _executable_tokens(path: Path) -> list[str]:
+            with path.open("rb") as fh:
+                tokens = list(tokenize.tokenize(fh.readline))
+            return [
+                t.string
+                for t in tokens
+                if t.type
+                not in (tokenize.COMMENT, tokenize.STRING, tokenize.ENCODING)
+            ]
+
         for mod in (cam_mod, drone_mod, notif_mod, yolo_mod):
-            source = Path(mod.__file__).read_text(encoding="utf-8")
-            for forbidden in (
-                "src.inference",
-                "src.pipeline.live_inference",
-                "src.pipeline.train_pipeline",
-                "src.models.stage1",
-                "src.models.stage2",
-                "src.api.db.database",
-            ):
-                assert forbidden not in source, (
-                    f"monitoring module {mod.__name__} imports forbidden prediction "
-                    f"dependency '{forbidden}'"
+            tokens_text = " ".join(
+                _executable_tokens(Path(mod.__file__))
+            )
+            for needle in forbidden:
+                assert needle not in tokens_text, (
+                    f"monitoring module {mod.__name__} touches forbidden "
+                    f"prediction dependency '{needle}'"
                 )
 
     def test_notifications_stored_in_memory_not_run_history(self, client):

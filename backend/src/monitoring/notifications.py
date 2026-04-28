@@ -1,36 +1,51 @@
-"""In-memory + on-disk fire-detection notifications.
+"""SQLite-backed fire-detection notifications.
 
-This is the *only* place monitoring writes observations. Notifications are
-strictly separated from ``run_history`` (the Option 3 prediction audit
-log) and never modify ``predicted_fwi`` or ``high_risk_flag``. They are
-an operational alerting channel, not a data source for the model.
+This is the *only* place monitoring writes observations. Notifications
+are strictly separated from ``run_history`` (the Option 3 prediction
+audit log) and never modify ``predicted_fwi`` or ``high_risk_flag``.
+They are an operational alerting channel, not a data source for the
+model.
 
 Two-tier storage
 ----------------
-1. **Ring buffer** — up to ``_MAX_NOTIFICATIONS`` most recent alerts held
-   in memory for the live Monitoring feed. Same shape as before (id,
-   source, timestamp, time_str, detection_count, max_confidence, image).
-2. **Append-only JSONL evidence log** — every alert is also appended to
-   ``data/notifications/alerts.jsonl`` with the **full per-detection
-   list** (label, confidence, bbox). This is the durable evidence trail
-   the Detection Alerts tab reads from, and it survives restarts. Any
-   mid-write crash loses at most the partially written trailing line,
-   which the JSONL reader skips.
+1. **In-memory ring buffer** — the most-recent alerts kept hot for the
+   live Monitoring feed (``GET /monitoring/notifications``). Rebuilt
+   from SQLite at startup so a restart does not appear to "lose" the
+   live feed.
+2. **SQLite ``detection_alerts`` table** — durable read/write store
+   for the Detection Alerts tab. Replaces the previous JSONL +
+   sidecar JSON design. Carries id, timestamp, label, confidence,
+   source, snapshot path, ``is_read`` flag, ``read_at``, the full
+   per-detection list, and a raw payload column for forensic use.
 
-The snapshots themselves are already written as JPEG files to
-``data/notifications/`` by ``save_snapshot()`` and served via the
-``/static/notifications/`` static mount.
+Snapshots themselves remain on disk as JPEG files under
+``backend/data/notifications/`` and are referenced by ``snapshot_path``
+in the SQLite row. They are served via the ``/static/notifications/``
+static mount mounted in ``src/api/main.py``.
+
+Migration from JSONL
+--------------------
+The legacy ``alerts.jsonl`` file (and the legacy
+``alerts_read_state.json`` sidecar) are read once on startup by
+``import_legacy_jsonl()``. Any alert whose id is not yet in
+``detection_alerts`` is inserted; existing rows are left untouched, so
+the import is idempotent and safe to re-run. The on-disk JSONL file
+is preserved for forensic / external use — no destructive cleanup.
+
+After the first import, the JSONL file is no longer written to. New
+detections go straight into SQLite via ``add_notification``.
 """
 from __future__ import annotations
 
 import json
 import logging
-import os
+import sqlite3
 import threading
 import time
 from pathlib import Path
 
 from configs.paths import NOTIFICATIONS_DIR
+from src.api.db.database import get_connection, init_db
 from src.api.time_utils import istanbul_now
 
 logger = logging.getLogger(__name__)
@@ -41,23 +56,20 @@ _THROTTLE_SECONDS = 10.0
 _notifications: list[dict] = []
 _lock = threading.Lock()
 
-# Evidence log — one JSON object per line, append-only, lock-protected.
-# Lives next to the snapshot JPEGs so a single directory backup captures
-# both the metadata trail and the frames it references.
+# Legacy JSONL path — kept for backward compatibility and a one-time
+# migration import. New alerts are NOT appended to this file; SQLite is
+# the source of truth.
 ALERTS_LOG_PATH = NOTIFICATIONS_DIR / "alerts.jsonl"
 _alerts_log_lock = threading.Lock()
 
-# Sidecar JSON file holding the read-state map for the JSONL evidence
-# log. Why a sidecar and not an extra column in the JSONL itself:
-# the JSONL is append-only and never edited in place — a "mark as read"
-# would otherwise force a full file rewrite. The sidecar is small
-# (one bool per alert id) and is rewritten atomically via a temp file
-# + os.replace, so a crash mid-write cannot leave it in a half-state.
-# A missing sidecar means "every alert is unread by default", which
-# matches the natural semantics for a fresh clone or a freshly
-# truncated evidence log.
+# Legacy sidecar path — read once during the migration to preserve
+# read-state for already-imported alerts. Not written to going forward.
 ALERTS_READ_STATE_PATH = NOTIFICATIONS_DIR / "alerts_read_state.json"
-_read_state_lock = threading.Lock()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _ensure_dir() -> Path:
@@ -74,19 +86,14 @@ def _last_time_for_source(source: str) -> float:
 
 
 def should_notify(source: str, now: float | None = None) -> bool:
-    """True if at least _THROTTLE_SECONDS have passed since the last notification
-    from this source."""
+    """True if at least _THROTTLE_SECONDS have passed since the last
+    notification from this source."""
     now = now if now is not None else time.time()
     return (now - _last_time_for_source(source)) > _THROTTLE_SECONDS
 
 
 def _sanitize_detections(detections: list[dict]) -> list[dict]:
-    """Coerce detections into a compact, JSON-safe shape.
-
-    Drops None/NaN confidences and non-numeric bbox components so the
-    JSONL log stays strictly machine-readable. Unknown labels collapse
-    to ``"fire"`` (the only class the current YOLO detector emits).
-    """
+    """Coerce detections into a compact, JSON-safe shape."""
     clean: list[dict] = []
     for d in detections or []:
         try:
@@ -110,21 +117,72 @@ def _sanitize_detections(detections: list[dict]) -> list[dict]:
     return clean
 
 
-def _append_alert_log(entry: dict) -> None:
-    """Append a single alert entry to the JSONL evidence log.
+def _row_to_alert(row: sqlite3.Row) -> dict:
+    """Render a ``detection_alerts`` row in the JSON shape the frontend
+    expects (a superset of the ring-buffer entry plus read state)."""
+    detections = []
+    if row["detections_json"]:
+        try:
+            detections = json.loads(row["detections_json"])
+        except (TypeError, ValueError):
+            detections = []
+    return {
+        "id": row["alert_id"],
+        "source": row["source"],
+        "timestamp": row["timestamp_epoch"],
+        # ``time_str`` is the human-readable Istanbul time the existing
+        # Detection Alerts tab + alert banner already render. We keep
+        # the legacy ``YYYY-MM-DD HH:MM:SS`` shape; ``timestamp_iso``
+        # is also exposed as the canonical machine-readable form.
+        "time_str": row["timestamp_iso"][:19].replace("T", " ")
+        if row["timestamp_iso"]
+        else None,
+        "timestamp_iso": row["timestamp_iso"],
+        "detection_count": row["detection_count"] or 0,
+        "max_confidence": row["confidence"] or 0.0,
+        "label": row["label"],
+        "image": row["snapshot_path"],
+        "snapshot_path": row["snapshot_path"],
+        "severity": row["severity"],
+        "message": row["message"],
+        "camera_id": row["camera_id"],
+        "detections": detections,
+        "read": bool(row["is_read"]),
+        "read_at": row["read_at"],
+    }
 
-    Never raises — a failed evidence write must not take the monitoring
-    loop down. It logs and moves on; the in-memory ring buffer still has
-    the entry so the live Monitoring feed is unaffected.
+
+def _ring_entry_from_alert(alert: dict) -> dict:
+    """Project a full alert dict down to the legacy ring-buffer shape
+    so ``GET /monitoring/notifications`` keeps its historical contract."""
+    return {
+        "id": alert.get("id"),
+        "source": alert.get("source"),
+        "timestamp": alert.get("timestamp"),
+        "time_str": alert.get("time_str"),
+        "detection_count": alert.get("detection_count", 0),
+        "max_confidence": alert.get("max_confidence", 0.0),
+        "image": alert.get("image"),
+    }
+
+
+def _severity_for(label: str, confidence: float) -> str:
+    """Best-effort severity tag for the ``severity`` column.
+
+    Used by the dashboard if it ever wants a colour-coded chip on the
+    Detection Alerts tab. Currently unused by the UI but cheap to
+    populate so future surfaces can read it without a migration.
     """
-    try:
-        _ensure_dir()
-        line = json.dumps(entry, ensure_ascii=False, default=str)
-        with _alerts_log_lock:
-            with ALERTS_LOG_PATH.open("a", encoding="utf-8") as fh:
-                fh.write(line + "\n")
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Failed to append alert to evidence log: %s", e)
+    if confidence >= 0.75:
+        return "critical"
+    if confidence >= 0.5:
+        return "warning"
+    return "info"
+
+
+# ---------------------------------------------------------------------------
+# Write path — the public entry point detection threads call.
+# ---------------------------------------------------------------------------
 
 
 def add_notification(
@@ -132,59 +190,100 @@ def add_notification(
     detections: list[dict],
     image_path: str | None = None,
 ) -> dict:
-    """Append a notification entry to the ring buffer **and** the JSONL
-    evidence log.
+    """Append a notification entry to SQLite + the in-memory ring buffer.
 
-    ``image_path`` is the relative URL under ``/static/notifications/...``.
-
-    The ring-buffer entry keeps its historical shape (``detection_count``
-    + ``max_confidence``) so existing callers — notably the live
-    ``/monitoring/notifications`` feed on the Monitoring tab — see no
-    change. The evidence log entry additionally carries the full
-    per-detection list (with bboxes) for the Detection Alerts tab.
+    ``image_path`` is the relative URL under
+    ``/static/notifications/...`` (or ``None`` for synthetic alerts).
+    The returned dict carries the full Detection Alert shape — ready to
+    feed the frontend banner, the Detection Alerts tab row, and the
+    alert summary tile.
     """
+    init_db()  # idempotent — guarantees detection_alerts exists.
     now = time.time()
     clean_dets = _sanitize_detections(detections)
 
-    entry = {
-        "id": str(int(now * 1000)),
+    iso = istanbul_now().isoformat()
+    label = (clean_dets[0]["label"] if clean_dets else "fire") or "fire"
+    max_conf = max((d["confidence"] for d in clean_dets), default=0.0)
+    alert_id = str(int(now * 1000))
+
+    raw_payload = {
+        "id": alert_id,
         "source": source,
         "timestamp": now,
-        # Always Istanbul-local, independent of the host OS timezone —
-        # otherwise a UTC-container host would show detection times three
-        # hours behind Karabük reality.
-        "time_str": istanbul_now().strftime("%Y-%m-%d %H:%M:%S"),
+        "time_str": iso[:19].replace("T", " "),
+        "timestamp_iso": iso,
         "detection_count": len(clean_dets),
-        "max_confidence": max(
-            (d["confidence"] for d in clean_dets), default=0.0
-        ),
+        "max_confidence": max_conf,
+        "image": image_path,
+        "detections": clean_dets,
+    }
+
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT OR REPLACE INTO detection_alerts (
+                   alert_id, timestamp_iso, timestamp_epoch,
+                   label, confidence, source, camera_id, severity,
+                   message, snapshot_path, is_read, read_at,
+                   detection_count, detections_json, raw_payload_json
+               ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                alert_id,
+                iso,
+                now,
+                label,
+                max_conf,
+                source,
+                source,  # camera_id mirrors source for now
+                _severity_for(label, max_conf),
+                f"{label} detected on {source} at {max_conf*100:.1f}% confidence",
+                image_path,
+                0,           # is_read
+                None,        # read_at
+                len(clean_dets),
+                json.dumps(clean_dets, ensure_ascii=False),
+                json.dumps(raw_payload, ensure_ascii=False, default=str),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    ring_entry = {
+        "id": alert_id,
+        "source": source,
+        "timestamp": now,
+        "time_str": raw_payload["time_str"],
+        "detection_count": len(clean_dets),
+        "max_confidence": max_conf,
         "image": image_path,
     }
     with _lock:
-        _notifications.append(entry)
+        _notifications.append(ring_entry)
         if len(_notifications) > _MAX_NOTIFICATIONS:
             del _notifications[: len(_notifications) - _MAX_NOTIFICATIONS]
 
-    # Evidence log carries the strictly-richer shape: same fields as the
-    # ring-buffer entry plus the per-detection list.
-    alert_entry = {**entry, "detections": clean_dets}
-    _append_alert_log(alert_entry)
-    # The caller — POST /monitoring/alerts/test, the YOLO inference loop,
-    # the demo seed script — wants a payload it can use as-is for the
-    # Detection Alerts tab. New alerts are unread by definition.
-    return {**alert_entry, "read": False, "read_at": None}
+    return {
+        **raw_payload,
+        "label": label,
+        "snapshot_path": image_path,
+        "severity": _severity_for(label, max_conf),
+        "camera_id": source,
+        "message": f"{label} detected on {source} at {max_conf*100:.1f}% confidence",
+        "read": False,
+        "read_at": None,
+    }
 
 
 def save_snapshot(source: str, frame_bgr) -> str | None:
-    """Write a snapshot to disk under ``data/notifications/`` and return the
-    relative static URL (``/static/notifications/<filename>``). Returns None
-    on failure (opencv missing, write error, etc.). Never raises."""
+    """Write a snapshot to disk under ``data/notifications/`` and return
+    the relative static URL. Returns None on failure. Never raises."""
     try:
         import cv2  # local import keeps module importable without opencv
     except ImportError:
         logger.warning("opencv-python not installed; cannot save snapshot")
         return None
-
     try:
         out_dir = _ensure_dir()
         ts = istanbul_now().strftime("%Y%m%d_%H%M%S_%f")
@@ -197,177 +296,16 @@ def save_snapshot(source: str, frame_bgr) -> str | None:
         return None
 
 
+# ---------------------------------------------------------------------------
+# Read path — endpoints + ring-buffer feed.
+# ---------------------------------------------------------------------------
+
+
 def get_notifications(limit: int = 50) -> list[dict]:
     """Return the most recent notifications, newest first."""
     with _lock:
         snap = list(_notifications[-limit:])
     return list(reversed(snap))
-
-
-def clear_notifications() -> int:
-    """Clear all notifications. Returns the number cleared. Test helper.
-
-    Also truncates the on-disk evidence log so tests that rely on a
-    known-empty baseline start from zero. Production code never calls
-    this — the evidence log is append-only during normal operation.
-    """
-    with _lock:
-        n = len(_notifications)
-        _notifications.clear()
-    with _alerts_log_lock:
-        try:
-            if ALERTS_LOG_PATH.exists():
-                ALERTS_LOG_PATH.unlink()
-        except Exception as e:  # noqa: BLE001
-            logger.warning("Failed to clear evidence log: %s", e)
-    # Drop the sidecar too so the next test starts with a clean
-    # everything-is-unread baseline.
-    with _read_state_lock:
-        try:
-            if ALERTS_READ_STATE_PATH.exists():
-                ALERTS_READ_STATE_PATH.unlink()
-        except Exception as e:  # noqa: BLE001
-            logger.warning("Failed to clear read-state sidecar: %s", e)
-    return n
-
-
-# ---------------------------------------------------------------------------
-# Evidence log — durable alert history for the Detection Alerts tab.
-# ---------------------------------------------------------------------------
-
-
-def _read_alert_log() -> list[dict]:
-    """Read every alert from the JSONL evidence log, oldest first.
-
-    Tolerates partial / corrupt trailing lines (skipped with a warning)
-    so a mid-write crash cannot break the reader.
-    """
-    if not ALERTS_LOG_PATH.exists():
-        return []
-    out: list[dict] = []
-    with _alerts_log_lock:
-        try:
-            with ALERTS_LOG_PATH.open("r", encoding="utf-8") as fh:
-                for i, raw in enumerate(fh):
-                    raw = raw.strip()
-                    if not raw:
-                        continue
-                    try:
-                        out.append(json.loads(raw))
-                    except json.JSONDecodeError:
-                        logger.warning(
-                            "Skipping corrupt alert log line %d", i + 1
-                        )
-                        continue
-        except Exception as e:  # noqa: BLE001
-            logger.warning("Failed to read alert evidence log: %s", e)
-    return out
-
-
-# ---------------------------------------------------------------------------
-# Read / unread sidecar — Option A persistence (see module docstring above).
-# ---------------------------------------------------------------------------
-
-
-def _read_state_load() -> dict[str, str]:
-    """Load the alert-id → ISO-timestamp map from the sidecar file.
-
-    Missing/corrupt file → empty dict (everything unread). Never
-    raises — read state is a best-effort UX nicety, the JSONL log is
-    the source of truth for "which alerts exist".
-    """
-    if not ALERTS_READ_STATE_PATH.exists():
-        return {}
-    try:
-        raw = ALERTS_READ_STATE_PATH.read_text(encoding="utf-8")
-        if not raw.strip():
-            return {}
-        data = json.loads(raw)
-        if not isinstance(data, dict):
-            return {}
-        # Coerce keys to str and drop non-truthy values so old entries
-        # written as bools still round-trip cleanly.
-        return {str(k): (str(v) if v else "") for k, v in data.items() if v}
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Could not read alerts_read_state.json: %s", e)
-        return {}
-
-
-def _read_state_save(state: dict[str, str]) -> None:
-    """Atomically rewrite the sidecar file (temp + os.replace).
-
-    Holds ``_read_state_lock`` for the rewrite. Never raises — if the
-    write fails, the in-memory call still returns and the next call
-    will try again.
-    """
-    try:
-        _ensure_dir()
-        tmp = ALERTS_READ_STATE_PATH.with_suffix(".json.tmp")
-        body = json.dumps(state, ensure_ascii=False, sort_keys=True)
-        with _read_state_lock:
-            with tmp.open("w", encoding="utf-8") as fh:
-                fh.write(body)
-            os.replace(tmp, ALERTS_READ_STATE_PATH)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("Could not write alerts_read_state.json: %s", e)
-
-
-def _annotate_read(alert: dict, read_state: dict[str, str]) -> dict:
-    """Return a shallow copy of ``alert`` with read/read_at filled in.
-
-    ``read`` is True iff the alert id appears in the sidecar map, and
-    ``read_at`` carries the timestamp the alert was marked read (or
-    None for unread alerts).
-    """
-    aid = str(alert.get("id"))
-    read_at = read_state.get(aid) or None
-    return {**alert, "read": read_at is not None, "read_at": read_at}
-
-
-def mark_alert_read(alert_id: str) -> dict | None:
-    """Mark a single alert as read. Returns the updated alert or None
-    if the id doesn't exist in the evidence log."""
-    alert = get_alert_by_id(alert_id)
-    if alert is None:
-        return None
-    state = _read_state_load()
-    state[str(alert_id)] = istanbul_now().isoformat()
-    _read_state_save(state)
-    return _annotate_read(alert, state)
-
-
-def mark_alert_unread(alert_id: str) -> dict | None:
-    """Mark a single alert as unread. No-op if it wasn't marked read."""
-    alert = get_alert_by_id(alert_id)
-    if alert is None:
-        return None
-    state = _read_state_load()
-    state.pop(str(alert_id), None)
-    _read_state_save(state)
-    return _annotate_read(alert, state)
-
-
-def mark_all_alerts_read() -> int:
-    """Mark every alert currently in the evidence log as read.
-
-    Returns the number of alerts that were *previously unread* and
-    have now been flipped — so the caller can show "Marked N alert(s)
-    as read." The JSONL file is not touched.
-    """
-    alerts = _read_alert_log()
-    state = _read_state_load()
-    now = istanbul_now().isoformat()
-    flipped = 0
-    for a in alerts:
-        aid = str(a.get("id"))
-        if not aid:
-            continue
-        if aid not in state:
-            state[aid] = now
-            flipped += 1
-    if flipped:
-        _read_state_save(state)
-    return flipped
 
 
 def list_alerts(
@@ -376,64 +314,194 @@ def list_alerts(
     source: str | None = None,
     read_filter: str | None = None,
 ) -> list[dict]:
-    """Return alerts from the evidence log, **newest first**.
+    """Return alerts from SQLite, **newest first**.
 
-    Supports two optional filters:
-
-    - ``source`` — ``drone`` / ``webcam`` / ``pc_camera`` / ``demo``.
-    - ``read_filter`` — ``"all"`` (default), ``"unread"``, ``"read"``.
-
-    Every returned entry is annotated with ``read`` (bool) and
-    ``read_at`` (ISO 8601 or ``None``) drawn from the sidecar
-    read-state map, so the frontend never has to ask twice.
+    Optional filters:
+      - ``source`` — drone / webcam / pc_camera / demo
+      - ``read_filter`` — "all" (default), "unread", "read"
     """
-    alerts = _read_alert_log()
+    init_db()
+    where: list[str] = []
+    params: list[object] = []
     if source:
-        alerts = [a for a in alerts if a.get("source") == source]
-
-    state = _read_state_load()
-    annotated = [_annotate_read(a, state) for a in alerts]
-
+        where.append("source = ?")
+        params.append(source)
     if read_filter:
         rf = read_filter.strip().lower()
         if rf == "unread":
-            annotated = [a for a in annotated if not a["read"]]
+            where.append("is_read = 0")
         elif rf == "read":
-            annotated = [a for a in annotated if a["read"]]
-        # any other value, including "all", falls through unchanged.
-
-    annotated.reverse()  # newest first
-    return annotated[offset : offset + limit]
+            where.append("is_read = 1")
+        # any other value falls through unchanged.
+    sql = "SELECT * FROM detection_alerts"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY timestamp_epoch DESC, alert_id DESC LIMIT ? OFFSET ?"
+    params += [limit, offset]
+    conn = get_connection()
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+    return [_row_to_alert(r) for r in rows]
 
 
 def get_alert_by_id(alert_id: str) -> dict | None:
-    """Return a single alert by id (string), or None if not found.
-
-    The returned dict carries the read/read_at annotation just like
-    ``list_alerts``."""
-    state = _read_state_load()
-    for a in _read_alert_log():
-        if str(a.get("id")) == str(alert_id):
-            return _annotate_read(a, state)
-    return None
+    init_db()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM detection_alerts WHERE alert_id = ?",
+            (str(alert_id),),
+        ).fetchone()
+    finally:
+        conn.close()
+    return _row_to_alert(row) if row else None
 
 
 def latest_alert() -> dict | None:
-    """Return the most recently appended alert from the evidence log, or None.
+    init_db()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM detection_alerts "
+            "ORDER BY timestamp_epoch DESC, alert_id DESC LIMIT 1"
+        ).fetchone()
+    finally:
+        conn.close()
+    return _row_to_alert(row) if row else None
 
-    Backs the ``GET /monitoring/alerts/latest`` endpoint, which the
-    dashboard polls every few seconds to surface a visible in-app
-    banner the moment a new fire detection lands. Reads the evidence
-    log fresh on each call — the JSONL file is small (one line per
-    alert, append-only) so this is cheap, and it means we never miss
-    an alert written by another process or a background detection
-    thread.
-    """
-    alerts = _read_alert_log()
-    if not alerts:
-        return None
-    state = _read_state_load()
-    return _annotate_read(alerts[-1], state)
+
+def alerts_summary() -> dict:
+    """Aggregate stats over the SQLite alert log."""
+    init_db()
+    conn = get_connection()
+    try:
+        total = conn.execute(
+            "SELECT COUNT(*) AS n FROM detection_alerts"
+        ).fetchone()["n"]
+        if total == 0:
+            return {
+                "total": 0,
+                "unread_count": 0,
+                "read_count": 0,
+                "by_source": {},
+                "max_confidence": None,
+                "last_time_str": None,
+                "last_source": None,
+                "last_by_source": {},
+            }
+        by_source_rows = conn.execute(
+            "SELECT source, COUNT(*) AS n FROM detection_alerts GROUP BY source"
+        ).fetchall()
+        by_source = {r["source"]: r["n"] for r in by_source_rows}
+
+        unread_count = conn.execute(
+            "SELECT COUNT(*) AS n FROM detection_alerts WHERE is_read = 0"
+        ).fetchone()["n"]
+
+        max_conf_row = conn.execute(
+            "SELECT MAX(confidence) AS m FROM detection_alerts"
+        ).fetchone()
+        max_conf = max_conf_row["m"] or 0.0
+
+        last_row = conn.execute(
+            "SELECT * FROM detection_alerts "
+            "ORDER BY timestamp_epoch DESC, alert_id DESC LIMIT 1"
+        ).fetchone()
+        last_alert = _row_to_alert(last_row) if last_row else None
+
+        # Per-source "last seen" timestamps: cheap and portable to do
+        # one targeted query per distinct source rather than one big
+        # window-function query. ``by_source`` already enumerates the
+        # distinct sources for us.
+        last_by_source: dict[str, str] = {}
+        for src in by_source:
+            r = conn.execute(
+                "SELECT timestamp_iso FROM detection_alerts "
+                "WHERE source = ? "
+                "ORDER BY timestamp_epoch DESC LIMIT 1",
+                (src,),
+            ).fetchone()
+            if r and r["timestamp_iso"]:
+                last_by_source[src] = (
+                    r["timestamp_iso"][:19].replace("T", " ")
+                )
+    finally:
+        conn.close()
+
+    return {
+        "total": total,
+        "unread_count": unread_count,
+        "read_count": total - unread_count,
+        "by_source": by_source,
+        "max_confidence": max_conf,
+        "last_time_str": last_alert["time_str"] if last_alert else None,
+        "last_source": last_alert["source"] if last_alert else None,
+        "last_by_source": last_by_source,
+    }
+
+
+def mark_alert_read(alert_id: str) -> dict | None:
+    init_db()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT alert_id FROM detection_alerts WHERE alert_id = ?",
+            (str(alert_id),),
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute(
+            "UPDATE detection_alerts SET is_read = 1, read_at = ? WHERE alert_id = ?",
+            (istanbul_now().isoformat(), str(alert_id)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_alert_by_id(alert_id)
+
+
+def mark_alert_unread(alert_id: str) -> dict | None:
+    init_db()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT alert_id FROM detection_alerts WHERE alert_id = ?",
+            (str(alert_id),),
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute(
+            "UPDATE detection_alerts SET is_read = 0, read_at = NULL "
+            "WHERE alert_id = ?",
+            (str(alert_id),),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return get_alert_by_id(alert_id)
+
+
+def mark_all_alerts_read() -> int:
+    """Flip every currently-unread alert to read. Returns the count."""
+    init_db()
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE detection_alerts SET is_read = 1, read_at = ? "
+            "WHERE is_read = 0",
+            (istanbul_now().isoformat(),),
+        )
+        conn.commit()
+        return cur.rowcount or 0
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Demo + test helpers
+# ---------------------------------------------------------------------------
 
 
 def add_demo_alert(
@@ -441,20 +509,12 @@ def add_demo_alert(
     confidence: float = 0.78,
     source: str = "demo",
 ) -> dict:
-    """Append a synthetic alert for UI / smoke-test purposes.
+    """Append a synthetic alert through the real persistence path.
 
-    Backs the ``POST /monitoring/alerts/test`` endpoint, which is
-    invaluable when no camera or drone hardware is available — a
-    collaborator (or a CI smoke test) can trigger a real evidence-log
-    write and confirm that the Detection Alerts tab, the dashboard
-    notification banner, and the alert summary tiles all light up
-    correctly.
-
-    The entry goes through the same code path as a real detection
-    (``add_notification`` writes to the ring buffer AND the JSONL
-    evidence log), so demo alerts persist across restarts exactly
-    like real ones. They are tagged ``source="demo"`` (or whatever
-    the caller passes) so they are easy to filter or remove later.
+    Backs ``POST /monitoring/alerts/test``. Persists into SQLite the
+    same way a real YOLO detection does, so the Detection Alerts tab,
+    the in-app banner, and ``/alerts/summary`` all light up correctly
+    when no camera hardware is available.
     """
     label_clean = (label or "fire").strip().lower()
     if label_clean not in ("fire", "smoke"):
@@ -471,7 +531,6 @@ def add_demo_alert(
             {
                 "label": label_clean,
                 "confidence": confidence_clean,
-                # Centred placeholder bbox (no real frame to crop from).
                 "bbox": [240, 200, 400, 360],
             }
         ],
@@ -479,91 +538,197 @@ def add_demo_alert(
     )
 
 
-def alerts_summary() -> dict:
-    """Aggregate stats over the full evidence log.
+def clear_notifications() -> int:
+    """Wipe alerts for tests. Returns the number cleared.
 
-    Returns totals, by-source counts, the highest confidence ever
-    recorded, and the most-recently-appended alert's source + time_str.
-    The evidence log is append-only, so "last" is unambiguously the last
-    line in the file — we do not compare timestamps (Windows
-    ``time.time()`` has ~15 ms resolution so two quick calls can land on
-    the same millisecond and break ordering).
+    Truncates the SQLite alert table and the in-memory ring buffer.
+    The legacy JSONL file and read-state sidecar are also removed so a
+    test starts from a known-clean baseline.
     """
-    alerts = _read_alert_log()
-    total = len(alerts)
-    if total == 0:
-        return {
-            "total": 0,
-            "unread_count": 0,
-            "read_count": 0,
-            "by_source": {},
-            "max_confidence": None,
-            "last_time_str": None,
-            "last_source": None,
-            "last_by_source": {},
-        }
-
-    state = _read_state_load()
-
-    by_source: dict[str, int] = {}
-    max_conf = 0.0
-    last_by_source: dict[str, str] = {}
-    unread_count = 0
-
-    for a in alerts:
-        src = str(a.get("source") or "unknown")
-        by_source[src] = by_source.get(src, 0) + 1
+    init_db()
+    conn = get_connection()
+    try:
+        n = conn.execute(
+            "SELECT COUNT(*) AS n FROM detection_alerts"
+        ).fetchone()["n"]
+        conn.execute("DELETE FROM detection_alerts")
+        conn.commit()
+    finally:
+        conn.close()
+    with _lock:
+        _notifications.clear()
+    with _alerts_log_lock:
         try:
-            conf = float(a.get("max_confidence") or 0.0)
-        except (TypeError, ValueError):
-            conf = 0.0
-        if conf > max_conf:
-            max_conf = conf
-        # Evidence log is append-ordered; overwriting is fine.
-        ts_str = a.get("time_str") or ""
-        if ts_str:
-            last_by_source[src] = ts_str
-        if str(a.get("id")) not in state:
-            unread_count += 1
+            if ALERTS_LOG_PATH.exists():
+                ALERTS_LOG_PATH.unlink()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Failed to clear legacy JSONL: %s", e)
+        try:
+            if ALERTS_READ_STATE_PATH.exists():
+                ALERTS_READ_STATE_PATH.unlink()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Failed to clear legacy sidecar: %s", e)
+    return n
 
-    last = alerts[-1]
-    return {
-        "total": total,
-        "unread_count": unread_count,
-        "read_count": total - unread_count,
-        "by_source": by_source,
-        "max_confidence": max_conf,
-        "last_time_str": last.get("time_str"),
-        "last_source": str(last.get("source") or "unknown"),
-        "last_by_source": last_by_source,
-    }
+
+# ---------------------------------------------------------------------------
+# Migration: import legacy JSONL into SQLite (idempotent).
+# ---------------------------------------------------------------------------
+
+
+def _read_legacy_jsonl() -> list[dict]:
+    if not ALERTS_LOG_PATH.exists():
+        return []
+    out: list[dict] = []
+    try:
+        with ALERTS_LOG_PATH.open("r", encoding="utf-8") as fh:
+            for i, raw in enumerate(fh):
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    out.append(json.loads(raw))
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "Skipping corrupt JSONL line %d during import", i + 1
+                    )
+                    continue
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Failed to read legacy JSONL: %s", e)
+    return out
+
+
+def _read_legacy_sidecar() -> dict[str, str]:
+    if not ALERTS_READ_STATE_PATH.exists():
+        return {}
+    try:
+        raw = ALERTS_READ_STATE_PATH.read_text(encoding="utf-8")
+        if not raw.strip():
+            return {}
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return {}
+        return {str(k): (str(v) if v else "") for k, v in data.items() if v}
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Could not read legacy sidecar: %s", e)
+        return {}
+
+
+def import_legacy_jsonl() -> int:
+    """Idempotently import legacy alerts.jsonl rows into SQLite.
+
+    Each JSONL entry is inserted into ``detection_alerts`` only if its
+    ``id`` is not already present. Read-state from the legacy
+    ``alerts_read_state.json`` sidecar is preserved for imported rows.
+    Returns the number of newly-inserted alerts.
+    """
+    init_db()
+    legacy = _read_legacy_jsonl()
+    if not legacy:
+        return 0
+    sidecar = _read_legacy_sidecar()
+
+    conn = get_connection()
+    inserted = 0
+    try:
+        existing = {
+            r["alert_id"]
+            for r in conn.execute(
+                "SELECT alert_id FROM detection_alerts"
+            ).fetchall()
+        }
+        for entry in legacy:
+            aid = str(entry.get("id") or "")
+            if not aid or aid in existing:
+                continue
+            ts_epoch = entry.get("timestamp")
+            try:
+                ts_epoch = float(ts_epoch) if ts_epoch is not None else 0.0
+            except (TypeError, ValueError):
+                ts_epoch = 0.0
+            time_str = entry.get("time_str") or ""
+            # Reconstruct an Istanbul-like ISO if only the legacy
+            # "YYYY-MM-DD HH:MM:SS" form is present.
+            iso = (
+                time_str.replace(" ", "T") + "+03:00" if time_str else ""
+            )
+            detections = entry.get("detections") or []
+            try:
+                max_conf = float(entry.get("max_confidence") or 0.0)
+            except (TypeError, ValueError):
+                max_conf = 0.0
+            label = (
+                detections[0].get("label", "fire") if detections else "fire"
+            )
+            source = str(entry.get("source") or "unknown")
+            snapshot = entry.get("image")
+            is_read = 1 if aid in sidecar else 0
+            read_at = sidecar.get(aid) or None
+            conn.execute(
+                """INSERT OR IGNORE INTO detection_alerts (
+                       alert_id, timestamp_iso, timestamp_epoch,
+                       label, confidence, source, camera_id, severity,
+                       message, snapshot_path, is_read, read_at,
+                       detection_count, detections_json, raw_payload_json
+                   ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    aid,
+                    iso,
+                    ts_epoch,
+                    label,
+                    max_conf,
+                    source,
+                    source,
+                    _severity_for(label, max_conf),
+                    f"{label} detected on {source} at {max_conf*100:.1f}% confidence",
+                    snapshot,
+                    is_read,
+                    read_at,
+                    int(entry.get("detection_count") or len(detections)),
+                    json.dumps(detections, ensure_ascii=False),
+                    json.dumps(entry, ensure_ascii=False, default=str),
+                ),
+            )
+            inserted += 1
+        conn.commit()
+    finally:
+        conn.close()
+    if inserted:
+        logger.info(
+            "Imported %d legacy JSONL alert(s) into detection_alerts table.",
+            inserted,
+        )
+    return inserted
 
 
 def hydrate_ring_buffer_from_log(limit: int = _MAX_NOTIFICATIONS) -> int:
-    """Rehydrate the in-memory ring buffer from the JSONL log.
+    """Rehydrate the in-memory ring buffer from SQLite at startup.
 
-    Called once at backend startup so the live Monitoring feed does not
-    appear empty after a restart — the most recent alerts from disk are
-    loaded back into the ring buffer with their original shape.
-    Returns the number of entries loaded.
+    Also runs the idempotent JSONL→SQLite import so a backend that
+    boots into a fresh DB still picks up legacy alerts. Returns the
+    number of entries loaded into the ring buffer.
     """
-    alerts = _read_alert_log()
-    if not alerts:
+    try:
+        import_legacy_jsonl()
+    except Exception as e:  # noqa: BLE001
+        # Migration is best-effort — a corrupt JSONL must never block
+        # backend boot.
+        logger.warning("Legacy JSONL import skipped: %s", e)
+
+    init_db()
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM detection_alerts "
+            "ORDER BY timestamp_epoch ASC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    finally:
+        conn.close()
+    if not rows:
         return 0
-    # Keep only the trailing ``limit`` so we don't overflow the buffer.
-    tail = alerts[-limit:]
     with _lock:
         _notifications.clear()
-        for a in tail:
-            _notifications.append(
-                {
-                    "id": a.get("id"),
-                    "source": a.get("source"),
-                    "timestamp": a.get("timestamp"),
-                    "time_str": a.get("time_str"),
-                    "detection_count": a.get("detection_count", 0),
-                    "max_confidence": a.get("max_confidence", 0.0),
-                    "image": a.get("image"),
-                }
-            )
-    return len(tail)
+        for r in rows:
+            _notifications.append(_ring_entry_from_alert(_row_to_alert(r)))
+    return len(rows)

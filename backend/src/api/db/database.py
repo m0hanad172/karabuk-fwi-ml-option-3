@@ -54,6 +54,41 @@ CREATE TABLE IF NOT EXISTS system_state (
     value_json TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- Detection Alerts moved from JSONL + sidecar to SQLite. The JSONL
+-- evidence log at backend/data/notifications/alerts.jsonl is preserved
+-- on disk for forensic / external use, but the dashboard reads and
+-- writes through this table — including the read/unread state that
+-- previously lived in alerts_read_state.json. Snapshot images stay as
+-- JPEG files under backend/data/notifications/, referenced by the
+-- snapshot_path column.
+--
+-- Strict invariant: detection_alerts has NO write-path link to
+-- run_history. The Option 3 prediction layer never touches this table
+-- and the monitoring layer never touches run_history.
+CREATE TABLE IF NOT EXISTS detection_alerts (
+    alert_id TEXT PRIMARY KEY,
+    timestamp_iso TEXT NOT NULL,           -- Istanbul ISO 8601, tz-aware
+    timestamp_epoch REAL,                  -- ordering / dedup tiebreak
+    label TEXT NOT NULL,                   -- "fire" / "smoke" / etc.
+    confidence REAL NOT NULL,              -- max confidence across detections
+    source TEXT NOT NULL,                  -- pc_camera / webcam / drone / demo
+    camera_id TEXT,                        -- duplicate of source for now;
+                                           -- future-proofs multi-camera setups
+    severity TEXT,                         -- "info" / "warning" / "critical"
+    message TEXT,                          -- human-readable summary
+    snapshot_path TEXT,                    -- /static/notifications/<file>.jpg
+    is_read INTEGER NOT NULL DEFAULT 0,
+    read_at TEXT,                          -- Istanbul ISO 8601 (or NULL)
+    detection_count INTEGER NOT NULL DEFAULT 0,
+    detections_json TEXT,                  -- per-bbox list, same shape as JSONL
+    raw_payload_json TEXT                  -- full original payload, audit-grade
+);
+
+CREATE INDEX IF NOT EXISTS idx_detection_alerts_ts
+    ON detection_alerts (timestamp_epoch DESC);
+CREATE INDEX IF NOT EXISTS idx_detection_alerts_unread
+    ON detection_alerts (is_read, timestamp_epoch DESC);
 """
 
 
