@@ -18,11 +18,10 @@ project-root/
 │   ├── outputs/             Runtime SQLite database (auto-created, gitignored)
 │   ├── requirements.txt
 │   ├── .env.example
-│   ├── pytest.ini
-│   └── Dockerfile           (starter template — see docs/DEPLOYMENT_PLAN.md)
+│   └── pytest.ini
 ├── frontend/                Next.js 16 + React 19 dashboard
 ├── docs/                    All project documentation (you are here)
-├── docker-compose.yml       (starter template)
+├── scripts/                 Local Hardware Mode helper PowerShell scripts
 ├── README.md
 ├── .gitignore
 └── legacy_detection_reference/   reference-only legacy prototype
@@ -219,12 +218,12 @@ host and use **Devices Detected** / **Auto-detect** to map indices from
 Use `python backend/scripts/check_cameras.py` for a quick host-side
 OpenCV diagnostic.
 
-**Docker note:** Docker Desktop on Windows usually cannot see the
-physical webcam without device passthrough. Docker remains the preferred
-path for prediction, dashboard, Run FWI, and Detection Alerts demos; use
-the local host backend when the demo specifically needs live camera
-hardware. When the camera is unavailable, the Monitoring tab should stay
-usable and show a camera-unavailable message instead of a broken stream.
+**Local Hardware Mode is the only official runtime.** Docker is
+deliberately not part of the active workflow because Docker Desktop on
+Windows cannot pass through the host webcam / Tello drone — and live
+monitoring is a core objective of this project. See
+[`DEPLOYMENT_PLAN.md`](./DEPLOYMENT_PLAN.md) for the deferred
+container roadmap.
 
 ---
 
@@ -246,7 +245,7 @@ usable and show a camera-unavailable message instead of a broken stream.
 | `/monitoring/cameras` | GET | Per-camera status (used by Monitoring tab) |
 | `/monitoring/drone/status` | GET | Drone feed status (Monitoring tab) |
 | `/monitoring/notifications` | GET | Live ring-buffer of recent detections |
-| `/monitoring/runtime` | GET | Runtime hint for camera availability and Docker passthrough |
+| `/monitoring/runtime` | GET | Runtime hint for camera availability (host OS, in-Docker flag — always `false` in Local Hardware Mode) |
 | `/monitoring/alerts` | GET | Durable detection alerts list; supports `filter=all\|unread\|read` |
 | `/monitoring/alerts/summary` | GET | Totals, unread/read counts, and by-source counts |
 | `/monitoring/alerts/latest` | GET | Most recent alert — cheap poll for the in-app banner |
@@ -257,39 +256,22 @@ usable and show a camera-unavailable message instead of a broken stream.
 | `/monitoring/alerts/test` | POST | Append a synthetic alert (demo / smoke-test) |
 | `/monitoring/.../feed` | misc | MJPEG streams |
 
-## 9A. Docker quick start
+## 9A. PowerShell helper scripts (Local Hardware Mode)
 
-```bash
-docker compose build
-docker compose up -d
-docker compose ps
+```powershell
+# from project root
+powershell -File scripts\check_ports.ps1     # 8000 + 3000 free?
+powershell -File scripts\start_backend.ps1   # creates .venv if needed
+powershell -File scripts\start_frontend.ps1  # npm install if needed
+powershell -File scripts\cleanup_local.ps1   # dry-run; -Apply to delete
 ```
 
-- Backend: <http://localhost:8000>
-- Frontend: <http://localhost:3000>
-- Health: <http://localhost:8000/system/health>
-- Public config: <http://localhost:8000/system/config>
+Camera diagnostic without booting the API:
 
-Useful maintenance commands:
-
-```bash
-docker compose logs backend --tail=200
-docker compose logs frontend --tail=200
-docker compose restart
-docker compose down
+```powershell
+.\.venv\Scripts\Activate.ps1
+python backend\scripts\check_cameras.py
 ```
-
-Do not run `docker compose down -v` unless you deliberately want to
-delete the named volumes. `backend_outputs` stores the Docker SQLite DB
-and `backend_notifications` stores Docker alert JSONL/JPG evidence.
-
-The compose backend runs production-like (`BACKEND_ENV=production`, no
-Uvicorn reload) and explicitly enables demo alerts for local demo
-verification. Set `DEMO_ALERTS_ENABLED=false` for non-demo production.
-
-Camera/drone hardware is local-only unless you configure Docker device
-passthrough. Without devices, the monitoring/detection APIs and tabs
-still respond and should not crash.
 
 ## 9B. Demo data and cleanup
 
@@ -306,10 +288,12 @@ It does not overwrite the active alert log or fabricate `run_history`;
 use the UI **Run Manual Check** button or `POST /risk/check` for a real
 run-history row.
 
-Detection alert read/unread state is stored in
-`backend/data/notifications/alerts_read_state.json` next to the JSONL
-evidence log. The sidecar is runtime data and should be backed up or
-cleared together with `alerts.jsonl`, not committed.
+Detection alert read/unread state lives in the SQLite
+`detection_alerts` table (`is_read`, `read_at`). Snapshots stay as
+JPG files under `backend/data/notifications/`. None of that is
+committed — the SQLite DB and snapshots are gitignored runtime state.
+On startup the backend runs a one-time idempotent import of any
+legacy `alerts.jsonl` rows into SQLite.
 
 Cleanup is dry-run by default:
 
@@ -319,11 +303,8 @@ powershell -ExecutionPolicy Bypass -File scripts\cleanup_local.ps1 -Apply
 ```
 
 It removes caches/build output only and protects the active SQLite DB,
-Detection Alerts JSONL/read-state/JPGs, `.venv`, `node_modules`, and
-DB backups.
-The old `.claude/` worktree directory is ignored and should be removed
-locally if it reappears; it is not part of the current Codex/main branch
-workflow.
+Detection Alert JPG snapshots and the legacy JSONL, `.venv`,
+`node_modules`, and DB backups.
 
 ### Operational timing contract
 

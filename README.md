@@ -32,6 +32,7 @@ The repository contains:
 - [Model files](#model-files)
 - [Environment variables](#environment-variables)
 - [Tests](#tests)
+- [Runtime data and persistence](#runtime-data-and-persistence)
 - [Docker / deployment](#docker--deployment)
 - [Common errors and fixes](#common-errors-and-fixes)
 - [Documentation index](#documentation-index)
@@ -107,8 +108,7 @@ project-root/
 │   ├── requirements.txt     Python dependencies (sklearn pinned to 1.6.1)
 │   ├── pytest.ini           Test config — pythonpath, testpaths
 │   ├── .env.example         Backend env template
-│   ├── README.md            Backend-specific docs
-│   └── Dockerfile           Starter template (see docs/DEPLOYMENT_PLAN.md)
+│   └── README.md            Backend-specific docs
 │
 ├── frontend/                Next.js 16 + React 19 dashboard
 │   ├── src/
@@ -119,24 +119,28 @@ project-root/
 │   ├── public/
 │   ├── package.json
 │   ├── .env.example         Frontend env template
-│   ├── README.md
-│   └── Dockerfile           Starter template
+│   └── README.md
+│
+├── scripts/                 Local Hardware Mode helpers (PowerShell)
+│   ├── check_ports.ps1      Confirm 8000 + 3000 are free
+│   ├── start_backend.ps1    Boot the API with auto .venv create
+│   ├── start_frontend.ps1   Boot the dashboard with auto npm install
+│   └── cleanup_local.ps1    Dry-run cleanup for caches / DB backups
 │
 ├── docs/                    All long-form project documentation
 │   ├── RUN_PROJECT.md       Operator runbook
 │   ├── CORE_IDEA.md         Architectural invariants and contracts
 │   ├── ARCHITECTURE.md      System architecture deep-dive
-│   ├── DEPLOYMENT_PLAN.md   Docker / deployment roadmap
+│   ├── DEPLOYMENT_PLAN.md   Deferred container roadmap (not active)
 │   ├── SQLITE_GUIDE.md      Schema and migration rules
 │   ├── PROJECT_BRIEF.md     Goals and phases
-│   ├── PHASE1_SUMMARY.md    Phase 1 — ML core completion notes
-│   ├── PHASE3_SUMMARY.md    Phase 3 — frontend foundation notes
+│   ├── PHASE1_SUMMARY.md    ML core completion notes
+│   ├── PHASE3_SUMMARY.md    Frontend foundation notes
 │   ├── STATUS.md            Current project status
 │   ├── NEXT_STEPS.md        Outstanding follow-ups
 │   ├── OLD_PROJECT_NOTES.md Historical notes
 │   └── Fire_Prediction_Blueprint.pdf
 │
-├── docker-compose.yml       Starter template — backend + frontend + volumes
 ├── README.md                You are here
 ├── .gitignore
 └── legacy_detection_reference/   reference-only legacy detection prototype
@@ -163,42 +167,60 @@ No paid API keys are required — Open-Meteo is public and key-less.
 
 ---
 
-## Collaborator quick start
+## Quick start — Local Hardware Mode (official runtime)
 
-```bash
+The project's official runtime is **Local Hardware Mode**: the
+backend runs directly on the Windows host so the dashboard's live
+webcam, PC-camera, and Tello drone monitoring can reach the actual
+USB devices via DirectShow. This is a core objective of the project,
+not a fallback — there is no Docker / cloud path in the active
+workflow.
+
+```powershell
 # 1. Clone
 git clone <this-repo-url> karabuk-fwi-ml
 cd karabuk-fwi-ml
 
-# 2. (Optional) copy env templates
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env.local
-
-# 3. Backend — venv + install
+# 2. Backend — create venv + install (one-time)
 python -m venv .venv
-# Windows PowerShell:  .\.venv\Scripts\Activate.ps1
-# Linux / macOS:       source .venv/bin/activate
+.\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -r backend/requirements.txt
+python -m pip install -r backend\requirements.txt
 
-# 4. Frontend — install
-cd frontend && npm install && cd ..
+# 3. Frontend — install (one-time)
+cd frontend
+npm install
+cd ..
 
-# 5. Run both (two terminals)
-# Terminal A — backend (from project root)
-python backend/scripts/serve.py
-# Terminal B — frontend
-cd frontend && npm run dev
+# 4. Run both (two terminals from the project root)
+# Terminal A — backend on port 8000
+.\.venv\Scripts\Activate.ps1
+python backend\scripts\serve.py
+
+# Terminal B — frontend on port 3000
+cd frontend
+npm run dev
+```
+
+Or, even shorter, use the wrappers in `scripts\`:
+
+```powershell
+powershell -File scripts\check_ports.ps1     # confirms 8000+3000 free
+powershell -File scripts\start_backend.ps1   # creates .venv if needed, then serves
+powershell -File scripts\start_frontend.ps1  # npm install if needed, then dev
 ```
 
 Then open:
 
-- Dashboard: <http://localhost:3000>
-- API docs: <http://localhost:8000/docs>
+- Dashboard:    <http://localhost:3000>
+- API docs:     <http://localhost:8000/docs>
 - Health check: <http://localhost:8000/system/health>
 
-That is the entire bring-up. **No model files need to be downloaded
-separately** — every artefact in `backend/models/` is committed (~8 MB).
+That's the entire bring-up. **No model files need to be downloaded
+separately** — every artefact in `backend/models/` is committed
+(~8 MB). The first manual run created from the dashboard immediately
+shows up in Run History; the first detection raised by the camera or
+drone immediately shows up in Detection Alerts.
 
 ---
 
@@ -354,71 +376,55 @@ hits every endpoint the dashboard consumes. Exit code is 0 on
 success and 1 on any failure, so it is safe to chain into a CI
 step or a git hook.
 
-GitHub Actions runs the backend pytest suite, the backend smoke check,
-the frontend production build, and `docker compose config` on push and
-pull request. Hardware camera/drone paths are intentionally not run in
-CI.
+GitHub Actions runs the backend pytest suite, the backend smoke
+check, and the frontend production build on push and pull request.
+Hardware camera / drone paths and Docker are intentionally not run
+in CI.
 
 ---
 
+## Runtime data and persistence
+
+Two things are durable but **gitignored** (created on first run, never
+committed):
+
+- **SQLite database** — `backend/outputs/karabuk_fwi.db`. Holds
+  `run_history` (Stacked v3 audit log), `system_state` (drone state,
+  live-weather snapshot), and `detection_alerts` (Detection Alerts
+  evidence + read/unread state). Schema is bootstrapped automatically
+  by `init_db()` on every backend boot.
+- **Snapshot JPEGs** — `backend/data/notifications/*.jpg`. Written by
+  the YOLO inference loop whenever a detection fires; referenced by
+  `detection_alerts.snapshot_path` and served via `/static/notifications/`.
+
+A fresh clone has zero rows in any of these. Trigger a real run from
+the dashboard's **Risk Decision** tab to populate `run_history`, or
+use the optional demo seeder:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python backend\scripts\seed_demo_runtime.py
+```
+
+The seeder appends two synthetic Detection Alerts (one fire, one
+smoke, both `source="demo"`) and prints a copy-pasteable curl that
+creates a real `run_history` row.
+
+> **Legacy JSONL → SQLite migration is automatic.** If your project
+> still has the old `backend/data/notifications/alerts.jsonl` file
+> from earlier runs, it is imported into the SQLite
+> `detection_alerts` table on the next backend boot. The import is
+> idempotent (rows are matched by `alert_id`) and the JSONL file is
+> preserved on disk for forensic use.
+
 ## Docker / deployment
 
-This repository ships **starter templates** for containerised
-deployment:
-
-- [`backend/Dockerfile`](./backend/Dockerfile)
-- [`frontend/Dockerfile`](./frontend/Dockerfile)
-- [`docker-compose.yml`](./docker-compose.yml)
-
-These are conservative, opinionated starting points. They have been
-locally verified with `docker compose build`, `docker compose up -d`,
-backend health checks, frontend startup, manual FWI run, demo alert
-persistence, and restart persistence. CI validates compose syntax only;
-full image builds stay local/deployment because torch/ultralytics are
-large. See
-[`docs/DEPLOYMENT_PLAN.md`](./docs/DEPLOYMENT_PLAN.md) for the full
-deployment checklist (volumes for `backend/outputs/`, env-var
-contracts, image build commands, what is safe to do now vs. later).
-
-Quick try (once you have Docker installed):
-
-```bash
-docker compose up --build
-# Backend at  http://localhost:8000
-# Frontend at http://localhost:3000
-```
-
-Useful Docker commands:
-
-```bash
-docker compose ps
-docker compose logs backend --tail=200
-docker compose logs frontend --tail=200
-docker compose restart
-docker compose down
-```
-
-Do not use `docker compose down -v` unless you deliberately want to
-reset the named volumes that store the runtime SQLite DB and detection
-evidence.
-
-Runtime data is local and gitignored:
-
-- SQLite run history: `backend/outputs/karabuk_fwi.db` locally,
-  `/app/outputs/karabuk_fwi.db` in Docker volume
-  `karabuk_fwi_backend_outputs`.
-- Detection alerts: `backend/data/notifications/alerts.jsonl`,
-  `alerts_read_state.json`, and snapshots locally,
-  `/app/data/notifications/` in Docker volume
-  `karabuk_fwi_backend_notifications`.
-- Fresh collaborators may start with empty Run History and Detection
-  Alerts. Run a manual check or use the optional demo seed script:
-  `python backend/scripts/seed_demo_runtime.py`.
-
-The compose file runs the backend in production-like mode
-(`BACKEND_ENV=production`, no reload) but explicitly enables demo
-alerts for local demo verification. Set `DEMO_ALERTS_ENABLED=false`
-before exposing the API beyond a trusted demo environment.
+Docker is **deliberately not part of the active workflow.** The
+project's core monitoring objective — live webcam, PC camera, and
+Tello drone — depends on Windows DirectShow access that Docker
+Desktop on Windows cannot pass through. See
+[`docs/DEPLOYMENT_PLAN.md`](./docs/DEPLOYMENT_PLAN.md) for the
+deferred container roadmap (when, why, and what would have to change).
 
 Local cleanup is dry-run by default:
 
@@ -459,16 +465,21 @@ The monitoring layer is optional. Comment out the `ultralytics`,
 if you only need the prediction backend.
 
 **Monitoring camera feed is unavailable.**
-The Monitoring tab uses backend OpenCV capture and backend MJPEG
-streams, not browser webcam permission prompts. Locally on Windows,
-run the backend on the host with `python backend/scripts/serve.py` and
-use **Devices Detected** / **Auto-detect** to map OpenCV indices. In
-Docker on Windows, physical webcam passthrough is not available by
-default; the tab should show: "Camera is unavailable in this runtime.
-For webcam monitoring, run the backend locally or configure Docker
-device passthrough."
-Prediction, Run FWI, Detection Alerts, and existing evidence remain
-usable even when camera hardware is unavailable.
+The Monitoring tab uses backend OpenCV capture (DSHOW on Windows),
+not browser webcam permission prompts. From a fresh clone:
+
+1. Confirm the backend is running locally with
+   `python backend\scripts\serve.py` (NOT in Docker — the project's
+   official runtime is Local Hardware Mode for exactly this reason).
+2. Run the camera diagnostic from the project root:
+   `python backend\scripts\check_cameras.py`. It probes the local
+   OpenCV indices and reports which ones can deliver a frame.
+3. On the Monitoring tab, click **Auto-detect** under Devices
+   Detected — the backend rebinds the highest-resolution opened
+   index to `webcam` and the next one to `pc_camera`.
+
+Prediction, Run FWI, and Detection Alerts remain fully usable even
+when camera hardware is unavailable.
 
 **`backend/outputs/karabuk_fwi.db` is missing.**
 Created automatically on first backend boot. If the file is locked
@@ -530,19 +541,25 @@ launch policy.
 
 ### Storage
 
-- **JSONL evidence log:** `backend/data/notifications/alerts.jsonl`
-  (append-only, one JSON object per line). This is the durable
-  store. Survives restart — the FastAPI lifespan startup calls
-  `hydrate_ring_buffer_from_log()` to rehydrate the live ring
-  buffer.
-- **Read-state sidecar:** `backend/data/notifications/alerts_read_state.json`
-  stores alert ids that the operator marked read. The JSONL evidence
-  log remains append-only; missing sidecar entries mean unread.
-- **JPEG snapshots:** `backend/data/notifications/<source>_<ts>.jpg`,
-  served via the FastAPI static mount at `/static/notifications/`.
-- **In-memory ring buffer:** the most recent ~200 alerts, used by
-  the live `/monitoring/notifications` feed. Always a subset of the
-  JSONL log.
+- **SQLite `detection_alerts` table** (`backend/outputs/karabuk_fwi.db`)
+  is the source of truth. Holds alert id, Istanbul ISO timestamp,
+  label, confidence, source, snapshot path, `is_read` flag,
+  `read_at`, severity, and the full per-detection bbox list. The
+  schema is bootstrapped by `init_db()` and is byte-compatible with
+  the existing `run_history` and `system_state` tables — same DB file,
+  separate write paths.
+- **JPEG snapshots** stay on disk as
+  `backend/data/notifications/<source>_<ts>.jpg`, served via the
+  FastAPI static mount at `/static/notifications/`. Referenced by
+  `detection_alerts.snapshot_path`.
+- **In-memory ring buffer** holds the most recent ~200 alerts for the
+  live `/monitoring/notifications` feed. Rehydrated from SQLite at
+  startup so a restart never appears to "lose" the live feed.
+- **Legacy `alerts.jsonl`** (and the legacy `alerts_read_state.json`
+  sidecar) are read once on startup and imported into SQLite by
+  `import_legacy_jsonl()`. The import is idempotent (rows match by
+  `alert_id`); the JSONL file is preserved on disk for forensic /
+  external use, never written to going forward.
 
 The whole `backend/data/notifications/` tree is **gitignored runtime
 state** — fresh detections do not dirty the working tree. If you
@@ -557,8 +574,8 @@ backend mkdirs it lazily).
 | `GET /monitoring/alerts/summary` | `{ total, unread_count, read_count, by_source, max_confidence, last_time_str, last_source, last_by_source }` — drives the summary tiles. |
 | `GET /monitoring/alerts/latest` | `{ alert: <single alert> | null }` — cheap poll target for the in-app notification banner. |
 | `GET /monitoring/alerts/{alert_id}` | One alert with the full per-detection list (label / confidence / bbox). |
-| `POST /monitoring/alerts/{alert_id}/read` | Mark one alert as read in the sidecar. |
-| `POST /monitoring/alerts/{alert_id}/unread` | Mark one alert unread again. |
+| `POST /monitoring/alerts/{alert_id}/read` | Set `is_read=1, read_at=<istanbul-iso>` for one alert. |
+| `POST /monitoring/alerts/{alert_id}/unread` | Set `is_read=0, read_at=NULL` for one alert. |
 | `POST /monitoring/alerts/mark-all-read` | Mark every currently logged alert as read. |
 | `POST /monitoring/alerts/test?label=fire&confidence=0.78&source=demo` | Append a synthetic alert through the real persistence path when `DEMO_ALERTS_ENABLED=true`. Useful when no camera/drone hardware is available; the frontend hides the **Test alert** button when `/system/config` reports demo alerts disabled. |
 | `GET /monitoring/notifications` | Recent ring-buffer view (subset of JSONL). |

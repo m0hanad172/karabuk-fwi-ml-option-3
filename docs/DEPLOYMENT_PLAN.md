@@ -1,174 +1,98 @@
 # Deployment Plan
 
-This document is the roadmap for taking the Karabük FWI Stacked v3
-system from "runs locally" to "runs in containers / runs on a
-server". The repo ships **starter Docker templates** so the structure
-is in place; this document tracks what is safe to do **now** vs
-**later**.
+The official runtime for this project is **Local Hardware Mode**: the
+backend runs directly on the Windows host (or any machine with USB
+camera + Tello drone access) and the dashboard runs alongside it. See
+[`README.md`](../README.md) for the day-to-day commands.
 
-> The Dockerfiles and `docker-compose.yml` have been locally verified
-> with `docker compose build`, `docker compose up -d`, backend health,
-> frontend startup, manual FWI run, demo Detection Alert, remote smoke
-> check, and `docker compose restart` persistence. CI validates compose
-> syntax; full image builds stay local/deployment because
-> torch/ultralytics are large.
+This document is the deferred container / cloud roadmap — written
+once, kept short, and revisited only if the project's hardware
+constraints change.
 
-## Phase 0 — current state
+## Why Docker is not the active path
 
-- ✅ Backend boots via `python backend/scripts/serve.py`.
-- ✅ Frontend boots via `cd frontend && npm run dev`.
-- ✅ All trained models are committed (~8 MB total).
-- ✅ SQLite database is created automatically on first boot.
-- ✅ No paid API keys required (Open-Meteo is public).
-- ✅ 97 backend tests passing.
-- ✅ GitHub Actions CI for backend tests, smoke check, frontend build,
-  and compose config.
+The dashboard's monitoring layer is a primary objective:
 
-## Phase 1 — local Docker (do this first when you start)
+- live webcam capture via OpenCV / Windows DSHOW;
+- live PC camera capture via the same path;
+- live Tello drone control via `djitellopy` (UDP);
+- YOLOv8 fire detection on those streams; and
+- snapshot evidence persisted alongside the audit log.
 
-Use `docker-compose.yml` at the repo root:
+Docker Desktop on Windows runs containers in a Linux VM that does
+**not** have direct access to host DirectShow devices. Passing the
+USB webcam through requires either WSL2-specific tooling (limited),
+USBIPD-WIN one-off mounts, or running the Linux Docker engine on a
+Linux host with `--device /dev/video0:/dev/video0`. None of these
+match the day-to-day demo workflow we want for this project.
 
-```bash
-docker compose up --build
-# Backend  → http://localhost:8000
-# Frontend → http://localhost:3000
-```
+For that reason the project ships **no Dockerfiles, no
+`docker-compose.yml`, and no Docker step in CI.** Every active
+runtime command in the README and `docs/RUN_PROJECT.md` is direct:
+`python backend/scripts/serve.py`, `npm run dev`, the smoke check,
+the cleanup script.
 
-What to validate:
+## Phase 0 — current state (always supported)
 
-1. **Backend image builds.** `docker compose build backend`.
-2. **Backend boots inside the container.** `docker compose up backend`
-   then `curl http://localhost:8000/system/health`. Both stages should
-   load and the SQLite DB should appear under the `backend_outputs`
-   volume.
-3. **Frontend image builds.** `docker compose build frontend`.
-4. **Frontend talks to backend from the browser.** The compose file
-   builds the frontend with `NEXT_PUBLIC_API_URL=http://localhost:8000`
-   because dashboard requests originate in the user's browser, not
-   from the frontend container.
-5. **SQLite persistence survives a container restart.**
-   `docker compose restart` — your `run_history` rows should still be
-   there. Use `docker compose down` to stop the stack, but avoid
-   `docker compose down -v` unless you deliberately want to delete the
-   runtime volumes.
+- ✅ `python backend/scripts/serve.py` runs the API on
+      <http://localhost:8000>.
+- ✅ `npm run dev` runs the dashboard on <http://localhost:3000>.
+- ✅ All trained models are committed (~8 MB).
+- ✅ SQLite schema (`run_history`, `system_state`, `detection_alerts`)
+      is bootstrapped automatically on first boot. Legacy
+      `alerts.jsonl` is imported idempotently into
+      `detection_alerts` so no historical alert is lost.
+- ✅ 108 backend tests passing; smoke check covers every endpoint
+      the frontend uses.
+- ✅ GitHub Actions runs pytest, smoke check, and the frontend
+      production build on every push and PR — no Docker step.
 
-If any of those fail, fix the Dockerfile rather than working around
-it in shell.
+## Phase 1 (deferred) — containerise without monitoring
 
-## Phase 2 — single-host production
+A Docker stack is only worth shipping when the deployment target
+genuinely doesn't need live cameras / drone — e.g. a public,
+read-only dashboard fronting a server that someone *else* feeds with
+detection events. The shape would be:
 
-Same compose file, but:
+- Backend image: `python:3.11-slim`, install backend/requirements
+  *minus* `opencv-python`, `ultralytics`, `djitellopy`, copy
+  `src/`, `configs/`, `scripts/`, `models/`, `data/`, run uvicorn.
+- Frontend image: multi-stage `node:20-alpine`, build with
+  `NEXT_PUBLIC_API_URL` baked at build time, serve with `next start`.
+- Compose: backend + frontend + named volume for
+  `backend/outputs/karabuk_fwi.db`. Snapshots arrive via a webhook
+  endpoint (not yet implemented) instead of being captured locally.
 
-- Pin image tags (`python:3.11-slim` → `python:3.11.9-slim-bookworm`,
-  `node:20-alpine` → `node:20.19.0-alpine`) so rebuilds are
-  reproducible.
-- Mount the `backend/outputs/` volume to a host path you back up
-  (e.g. `/srv/karabuk/outputs:/app/outputs`).
-- Run behind a reverse proxy (nginx / Caddy / Traefik) with TLS.
-- Set `CORS_ORIGINS` to the real frontend origin(s). Production-like
-  modes never default to wildcard.
-- Set `DEMO_ALERTS_ENABLED=false` unless this is a trusted demo stack.
-- Set explicit `restart: unless-stopped` on both services.
+Out of scope for the active workflow.
 
-## Phase 3 — multi-host or managed deployment (later)
+## Phase 2 (deferred) — multi-host
 
-Two things stop being trivial:
+If the project ever scales beyond a single operator console, the
+specific things that need attention:
 
-1. **SQLite + multiple replicas.** SQLite assumes a single writer.
-   If you scale to >1 backend replica, switch to PostgreSQL (the
-   schema is small — three tables — and the queries don't use any
-   SQLite-specific features beyond `INSERT OR REPLACE`).
-2. **Camera + drone hardware.** The monitoring layer expects
-   `/dev/video*` (Linux) or DSHOW indices (Windows). You can either
-   run the monitoring layer on the host with `--device /dev/video0:
-   /dev/video0`, or split it out into a separate "edge" service
-   that POSTs detection events to the API. On Docker Desktop for
-   Windows, local webcam passthrough to a Linux container is not a
-   reliable default; keep live camera demos on the host backend unless
-   you deliberately configure and test device passthrough.
+1. **SQLite ↔ Postgres.** SQLite assumes a single writer. Three
+   tables (`run_history`, `system_state`, `detection_alerts`) with
+   small queries — a Postgres migration is mostly a connector
+   change.
+2. **Hardware split.** Run the camera / drone capture as a separate
+   "edge" service on the operator's laptop, posting detection events
+   to the API. The API itself stays portable.
+3. **CORS.** Replace the localhost-only allow-list in
+   `backend/src/api/main.py` with the real frontend origin and stop
+   advertising the demo / test alert endpoint
+   (`DEMO_ALERTS_ENABLED=false`).
 
-## Environment variables
+## What stays unchanged forever
 
-The system needs **almost no config**. The important variables are:
-
-| Variable | Service | Default | Purpose |
-|---|---|---|---|
-| `BACKEND_ENV` | backend | `development` locally, `production` in Docker | Controls reload defaults and production-like feature defaults |
-| `CORS_ORIGINS` | backend | `http://localhost:3000,http://127.0.0.1:3000` | FastAPI CORS allow-list |
-| `DEMO_ALERTS_ENABLED` | backend | `true` outside production, `false` in production unless explicitly set | Gates `POST /monitoring/alerts/test` and the frontend Test alert button |
-| `KARABUK_DB_PATH` | backend | `backend/outputs/karabuk_fwi.db` | Override SQLite path |
-| `NEXT_PUBLIC_API_URL` | frontend (build-time) | `http://localhost:8000` | Backend base URL |
-
-In Docker:
-
-- `NEXT_PUBLIC_API_URL` is a **build-time** variable for Next.js, so
-  it must be set when you `docker build` the frontend (the compose
-  file does this via `args:`).
-- `KARABUK_DB_PATH` should point inside the mounted volume.
-- `GET /system/config` exposes only safe public values:
-  `backend_env`, `service_mode`, `demo_alerts_enabled`, and `version`.
-
-## Volumes / persistence
-
-| Path inside container | Mount | What it stores |
-|---|---|---|
-| `/app/outputs/` | named volume `backend_outputs` | SQLite DB, generated reports |
-| `/app/data/notifications/` | named volume `backend_notifications` | Detection alerts JSONL, read-state sidecar, and snapshots |
-
-Everything in `backend/models/` and `backend/data/processed/` is
-copied into the image at build time — no volume needed. Runtime
-notification JSONL/JPG files are excluded by `backend/.dockerignore`
-and must not be baked into images.
-
-## Model files in Docker
-
-Models are baked into the backend image (~8 MB total). On retrain,
-the regenerated joblib files land back in `backend/models/`, and the
-next `docker compose build backend` picks them up.
-
-If a future retraining produces materially larger artefacts (>50 MB),
-either:
-
-- introduce **Git LFS** and add a `.gitattributes` file, or
-- pull the model from object storage at container start (add an
-  `entrypoint.sh` that fetches from S3 / GCS / Azure Blob before
-  exec-ing uvicorn).
-
-## Decisions: what to do now vs later
-
-### Do now
-
-- ✅ Ship the starter Dockerfiles + compose file (already in the repo).
-- ✅ Document the env var contract (this file).
-- ✅ Keep the SQLite path overridable via `KARABUK_DB_PATH`.
-- ✅ Verify local Docker build/run/restart behavior.
-- ✅ Add CI for backend/frontend checks and compose config.
-
-### Do soon
-
-- Pin Python and Node base images to specific patch versions.
-- Split Docker dependencies into a CPU-friendly backend image profile
-  so torch/ultralytics do not pull CUDA packages in vanilla Docker.
-- Add reverse proxy/TLS and production logging.
-
-### Defer
-
-- Postgres migration. Only worth doing if you need >1 backend replica
-  or you outgrow SQLite (unlikely for a per-run audit log).
-- Kubernetes / Helm. Overkill for the current footprint.
-- Git LFS. Not needed at the current model size.
-- Hardware passthrough for monitoring. Easier to keep monitoring on
-  the host (or on a dedicated edge box) and have the cloud backend
-  receive detection events via webhook.
-
-## Pre-flight checklist (when you do go live)
-
-- [ ] Set `CORS_ORIGINS` to the real frontend origin.
-- [ ] Confirm `DEMO_ALERTS_ENABLED=false` unless explicitly demoing.
-- [ ] Confirm backend starts with `BACKEND_ENV=production` and no
-      Uvicorn reload.
-- [ ] Bind to `0.0.0.0` only behind a reverse proxy.
-- [ ] Schedule a backup of the `backend_outputs` volume.
-- [ ] Confirm Open-Meteo egress from production network.
-- [ ] Run `python backend/scripts/migrate_run_timestamps_to_istanbul.py`
-      one last time if you are migrating an existing DB.
+- `backend/configs/paths.py` is the single source of truth for every
+  data / model / DB path. All paths are derived from
+  `PROJECT_ROOT = Path(__file__).resolve().parent.parent` so the
+  backend folder can be relocated without code edits.
+- The architectural separation of prediction
+  (`run_history` / `system_state`) from monitoring
+  (`detection_alerts` + JPG snapshots) — guarded by an AST-level
+  test in `backend/tests/test_monitoring.py`.
+- The model artefacts and the engineered training set are committed
+  to the repo. The `requirements.txt` pin
+  (`scikit-learn==1.6.1`) must be respected on any future
+  retraining or environment migration.

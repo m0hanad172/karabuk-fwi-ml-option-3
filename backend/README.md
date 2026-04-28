@@ -41,9 +41,14 @@ backend/
 ├── requirements.txt
 ├── pytest.ini
 ├── .env.example
-├── README.md
-└── Dockerfile                starter template — see docs/DEPLOYMENT_PLAN.md
+└── README.md
 ```
+
+The official runtime is **Local Hardware Mode** (see the root
+[`README.md`](../README.md)). The backend runs directly on the
+Windows host so OpenCV / DSHOW can reach the live webcam, PC camera,
+and Tello drone — there is no Docker / cloud image in the active
+workflow.
 
 `src.*` and `configs.*` are imported as **absolute** paths everywhere —
 no relative imports inside the package. `pytest.ini` sets
@@ -77,7 +82,7 @@ Variables (all optional):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `BACKEND_ENV` | `development` | `development` enables reload by default; `production`/`docker` disables reload and uses production-like feature defaults |
+| `BACKEND_ENV` | `development` | `development` (also accepts `dev` / `local`) enables reload by default; `production` disables reload and uses production-like feature defaults |
 | `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | FastAPI CORS allow-list; production-like modes never default to wildcard |
 | `DEMO_ALERTS_ENABLED` | `true` outside production, `false` in production unless explicitly set | Gates `POST /monitoring/alerts/test` and the frontend Test alert button |
 | `KARABUK_DB_PATH` | `backend/outputs/karabuk_fwi.db` | Override SQLite path |
@@ -153,43 +158,51 @@ that boundary is enforced by code review, not by a constraint.
 ## Detection Alerts
 
 Fire / smoke detections raised by the monitoring layer (drone /
-webcam / PC camera) are persisted independently of `run_history`:
+webcam / PC camera) are persisted in the SQLite **`detection_alerts`**
+table, separate from `run_history`:
 
-- **JSONL evidence log:** `data/notifications/alerts.jsonl`
-  (append-only, lock-protected).
-- **Read-state sidecar:** `data/notifications/alerts_read_state.json`
-  stores read alert ids so the evidence log stays append-only.
-- **JPEG snapshots:** `data/notifications/<source>_<ts>.jpg`, served
-  via the FastAPI static mount at `/static/notifications/`.
-- **In-memory ring buffer (200 entries):** rehydrated from the JSONL
-  log on every backend boot via
-  `notifications.hydrate_ring_buffer_from_log()`, so the live feed
-  is never empty after a restart.
+- **SQLite (`backend/outputs/karabuk_fwi.db`)** — the canonical
+  store. Columns: `alert_id`, `timestamp_iso`, `timestamp_epoch`,
+  `label`, `confidence`, `source`, `camera_id`, `severity`,
+  `message`, `snapshot_path`, `is_read`, `read_at`,
+  `detection_count`, `detections_json`, `raw_payload_json`.
+- **JPEG snapshots** stay on disk under
+  `data/notifications/<source>_<ts>.jpg`, served via the FastAPI
+  static mount at `/static/notifications/`. Referenced by
+  `detection_alerts.snapshot_path`.
+- **In-memory ring buffer (200 entries)** is rehydrated from SQLite
+  on every backend boot via
+  `notifications.hydrate_ring_buffer_from_log()`, so the live
+  `/monitoring/notifications` feed is never empty after a restart.
+- **Legacy `alerts.jsonl`** is *imported once* into SQLite by
+  `import_legacy_jsonl()` on startup. The import is idempotent
+  (rows match by `alert_id`); the JSONL file is preserved on disk
+  for forensic / external use, never written to going forward. The
+  legacy `alerts_read_state.json` sidecar is also read once during
+  the same import to preserve previously-marked-read alerts.
 
 Endpoints (full table: see the
 [Detection Alerts and Dashboard Notifications](../README.md#detection-alerts-and-dashboard-notifications)
 section in the root README):
 
 - `GET /monitoring/alerts` — durable list, newest first.
-- `GET /monitoring/alerts/summary` — totals + by-source counts.
+- `GET /monitoring/alerts/summary` — totals + unread / read counts +
+  by-source counts.
 - `GET /monitoring/alerts/latest` — single most-recent alert (cheap
   poll target for the in-app banner).
 - `GET /monitoring/alerts/{alert_id}` — single alert with bboxes.
-- `POST /monitoring/alerts/{alert_id}/read` / `unread` — update
-  read state in the sidecar.
-- `POST /monitoring/alerts/mark-all-read` — mark every current alert
-  as read without rewriting `alerts.jsonl`.
+- `POST /monitoring/alerts/{alert_id}/read` / `unread` — flip
+  `is_read` and stamp `read_at` on a single row.
+- `POST /monitoring/alerts/mark-all-read` — bulk update.
 - `POST /monitoring/alerts/test` — append a synthetic alert via the
-  real persistence path when `DEMO_ALERTS_ENABLED=true`. Useful for
-  end-to-end testing the dashboard when no camera / drone hardware is
-  plugged in.
+  real persistence path when `DEMO_ALERTS_ENABLED=true`.
 
-The whole `data/notifications/` tree is gitignored runtime state.
-Adding `?source=drone|webcam|pc_camera` to the list endpoint filters
-the evidence log; adding `?filter=unread|read` filters by read state.
-Demo alerts (`POST /alerts/test`) are tagged `source="demo"` so they
-are easy to filter or review separately. Do not delete the alert log or
-read-state sidecar as part of normal cleanup.
+The `data/notifications/` JPG tree and the SQLite DB are both
+gitignored runtime state. Adding `?source=drone|webcam|pc_camera|demo`
+to the list endpoint filters by source; adding `?filter=unread|read`
+filters by read state. Demo alerts are tagged `source="demo"` so they
+are easy to filter or review separately. **Do not delete the SQLite
+DB or the JPEG snapshots as part of normal cleanup.**
 
 `GET /system/config` returns the safe public runtime flags consumed by
 the frontend: `backend_env`, `service_mode`, `demo_alerts_enabled`, and
@@ -220,11 +233,10 @@ python backend/scripts/serve.py
 ```
 
 Then use the Monitoring tab's **Devices Detected** strip or
-`GET /monitoring/cameras/devices` to confirm the OpenCV indices. Docker
-Desktop on Windows does not expose physical webcams to Linux containers
-by default; in that runtime the camera cards should remain usable and
-show: "Camera is unavailable in this runtime. For webcam monitoring,
-run the backend locally or configure Docker device passthrough."
+`GET /monitoring/cameras/devices` to confirm the OpenCV indices.
+Click **Auto-detect** to let the backend bind the highest-resolution
+opened index to `webcam` (the BRIO 100 reports 1080p) and the next
+one to `pc_camera`.
 
 For a host-side diagnosis without starting the API server:
 

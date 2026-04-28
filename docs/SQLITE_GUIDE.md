@@ -7,14 +7,10 @@ Karabük FWI Option 3 dashboard.
 
 ## 1. Where the database lives
 
-- **Production path:** `backend/outputs/karabuk_fwi.db` (relative to
-  the project root). `OUTPUTS_DIR` in `backend/configs/paths.py`
-  resolves through `Path(__file__).resolve().parent.parent` and
-  always lands on `backend/`.
-- **Docker path:** `/app/outputs/karabuk_fwi.db`, persisted by the
-  named volume `karabuk_fwi_backend_outputs`. `docker compose restart`
-  and `docker compose down` preserve it; `docker compose down -v`
-  deletes it.
+- **Path:** `backend/outputs/karabuk_fwi.db` (relative to the project
+  root). `OUTPUTS_DIR` in `backend/configs/paths.py` resolves through
+  `Path(__file__).resolve().parent.parent` and always lands on
+  `backend/`.
 - **Test override:** `backend/tests/conftest.py` sets the
   `KARABUK_DB_PATH` environment variable to a temp file, so running
   `pytest` never writes into the production DB.
@@ -25,16 +21,19 @@ Karabük FWI Option 3 dashboard.
   by exporting the env var before the first query.
 
 The DB file is created on first use. `get_connection()` also enables
-WAL journal mode so concurrent reads from the API never block
-scheduler writes.
+WAL journal mode so concurrent reads from the API never block writes.
 
 The SQLite DB is runtime state and is gitignored. Fresh collaborators
-may start with an empty Run History; trigger **Run Manual Check** in the
-dashboard or `POST /risk/check` to create a real operational row.
-Detection Alerts are separate runtime state in
-`backend/data/notifications/alerts.jsonl` locally and
-`/app/data/notifications/` in Docker volume
-`karabuk_fwi_backend_notifications`.
+may start with an empty Run History; trigger **Run Manual Check** in
+the dashboard or `POST /risk/check` to create a real operational row.
+
+Detection Alerts now live in a third table in this same DB
+(`detection_alerts`, see §3.3). Snapshot JPGs are still files on disk
+under `backend/data/notifications/`, referenced by
+`detection_alerts.snapshot_path`. The legacy `alerts.jsonl` evidence
+log is preserved on disk for forensic use; on startup the backend
+runs a one-time idempotent import of any rows it contains into
+`detection_alerts`.
 
 > **Migrating across the `backend/` restructure.** The DB path moved
 > from `outputs/karabuk_fwi.db` (legacy root) to
@@ -103,6 +102,44 @@ Tiny key/value table for persistent system settings (e.g. drone policy
 overrides). Schema: `key TEXT PRIMARY KEY, value_json TEXT NOT NULL,
 updated_at TEXT NOT NULL`. `updated_at` is always produced by
 `istanbul_now_iso()`.
+
+### 3.3 `detection_alerts`
+
+Every fire / smoke detection raised by the monitoring layer (drone,
+webcam, PC camera, plus synthetic `source="demo"` alerts) lands here.
+Replaces the previous JSONL + read-state-sidecar design — read /
+unread state is now a column instead of a separate file.
+
+| Column | Type | Notes |
+|---|---|---|
+| `alert_id` | TEXT PRIMARY KEY | Millisecond-epoch id ("`1777387751610`") generated at write time |
+| `timestamp_iso` | TEXT NOT NULL | tz-aware Istanbul ISO 8601 |
+| `timestamp_epoch` | REAL | Float seconds since epoch — used for ordering and dedup tiebreaks |
+| `label` | TEXT NOT NULL | "fire" / "smoke" / etc. |
+| `confidence` | REAL NOT NULL | Max confidence across the per-alert detection list |
+| `source` | TEXT NOT NULL | `pc_camera` / `webcam` / `drone` / `demo` |
+| `camera_id` | TEXT | Mirrors `source` for now; future-proofs multi-camera setups |
+| `severity` | TEXT | "info" / "warning" / "critical" — derived from confidence |
+| `message` | TEXT | Human-readable summary |
+| `snapshot_path` | TEXT | `/static/notifications/<file>.jpg` URL or NULL |
+| `is_read` | INTEGER NOT NULL DEFAULT 0 | 0 = unread, 1 = read |
+| `read_at` | TEXT | tz-aware Istanbul ISO 8601 (or NULL) |
+| `detection_count` | INTEGER NOT NULL DEFAULT 0 | Number of bbox entries |
+| `detections_json` | TEXT | JSON list of `{label, confidence, bbox}` |
+| `raw_payload_json` | TEXT | Full original payload, audit-grade |
+
+Indexes: `idx_detection_alerts_ts` on `(timestamp_epoch DESC)`,
+`idx_detection_alerts_unread` on `(is_read, timestamp_epoch DESC)` —
+keeps the dashboard's "newest first" and "unread first" queries cheap.
+
+**Legacy migration.** The previous design wrote alerts to
+`backend/data/notifications/alerts.jsonl` (append-only) with a
+sidecar `alerts_read_state.json` mapping read alert ids. On every
+backend boot, `notifications.import_legacy_jsonl()` reads any
+remaining JSONL rows and `INSERT OR IGNORE`s them into
+`detection_alerts`, preserving read-state from the legacy sidecar.
+The import is idempotent (matched by `alert_id`); the JSONL file is
+preserved on disk and never written to going forward.
 
 ---
 

@@ -78,27 +78,29 @@ Health check: <http://localhost:8000/system/health>
 If the backend is unreachable, every tab renders an `ErrorAlert` with
 the underlying fetch error — that is intentional, not a frontend bug.
 
-Docker builds bake `NEXT_PUBLIC_API_URL` at build time. The local
-compose file uses `http://localhost:8000` because requests are made by
-the user's browser. Rebuild the frontend image after changing that
-value.
+The official runtime is **Local Hardware Mode**: the backend runs
+directly on the Windows host so OpenCV / DSHOW can reach the live
+webcam, PC camera, and Tello drone. There is no Docker path in the
+active workflow.
 
 ## Monitoring tab
 
 The Monitoring tab displays backend MJPEG streams for Drone, Webcam,
-and PC Camera. It does not use browser webcam permissions. For live
-webcam demos on Windows, run the FastAPI backend locally on the host so
-OpenCV can access the device. In Docker on Windows, the dashboard should
-show a clean camera-unavailable state unless device passthrough is
-configured.
+and PC Camera. It does not use browser webcam permissions. The
+backend runs locally so OpenCV can access the host devices through
+DirectShow (Windows). When a camera index can't be opened, the tab
+renders a clean unavailable state and structured `last_error` instead
+of a broken stream.
 
 ## Detection Alerts tab
 
-Detection Alerts reads the append-only JSONL evidence log through
-`/monitoring/alerts*`. Operators can filter All / Unread / Read, mark
-one alert as read, or mark all alerts read. Read state is persisted by
-the backend in a small sidecar file, so refreshing the browser or
-restarting the backend does not reset unread counts.
+Detection Alerts reads from the SQLite `detection_alerts` table
+through `/monitoring/alerts*`. Operators can filter All / Unread /
+Read, mark one alert as read, or mark all alerts as read. Read state
+is a column on the row (`is_read`, `read_at`), so refreshing the
+browser or restarting the backend never resets unread counts. JPG
+snapshots are referenced by `snapshot_path` and served via the
+FastAPI static mount at `/static/notifications/`.
 
 ## Time / locale
 
