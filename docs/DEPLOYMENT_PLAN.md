@@ -113,7 +113,7 @@ In Docker:
 | Path inside container | Mount | What it stores |
 |---|---|---|
 | `/app/outputs/` | named volume `backend_outputs` | SQLite DB, generated reports |
-| `/app/data/notifications/` | named volume `backend_notifications` | Detection alerts JSONL + snapshots |
+| `/app/data/notifications/` | named volume `backend_notifications` | Detection alerts JSONL, read-state sidecar, and snapshots |
 
 Everything in `backend/models/` and `backend/data/processed/` is
 copied into the image at build time — no volume needed. Runtime

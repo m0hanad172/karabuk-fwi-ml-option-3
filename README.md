@@ -407,8 +407,9 @@ Runtime data is local and gitignored:
 - SQLite run history: `backend/outputs/karabuk_fwi.db` locally,
   `/app/outputs/karabuk_fwi.db` in Docker volume
   `karabuk_fwi_backend_outputs`.
-- Detection alerts: `backend/data/notifications/alerts.jsonl` and
-  snapshots locally, `/app/data/notifications/` in Docker volume
+- Detection alerts: `backend/data/notifications/alerts.jsonl`,
+  `alerts_read_state.json`, and snapshots locally,
+  `/app/data/notifications/` in Docker volume
   `karabuk_fwi_backend_notifications`.
 - Fresh collaborators may start with empty Run History and Detection
   Alerts. Run a manual check or use the optional demo seed script:
@@ -427,8 +428,8 @@ powershell -ExecutionPolicy Bypass -File scripts\cleanup_local.ps1 -Apply
 ```
 
 The cleanup helper removes caches and build output only; it never
-removes the active SQLite DB, alert JSONL/JPG evidence, `.venv`,
-`node_modules`, or DB backups.
+removes the active SQLite DB, alert JSONL/read-state/JPG evidence,
+`.venv`, `node_modules`, or DB backups.
 
 The old `.claude/` worktree folder is not part of the current project
 workflow. It is ignored and should be removed locally if it appears;
@@ -534,6 +535,9 @@ launch policy.
   store. Survives restart — the FastAPI lifespan startup calls
   `hydrate_ring_buffer_from_log()` to rehydrate the live ring
   buffer.
+- **Read-state sidecar:** `backend/data/notifications/alerts_read_state.json`
+  stores alert ids that the operator marked read. The JSONL evidence
+  log remains append-only; missing sidecar entries mean unread.
 - **JPEG snapshots:** `backend/data/notifications/<source>_<ts>.jpg`,
   served via the FastAPI static mount at `/static/notifications/`.
 - **In-memory ring buffer:** the most recent ~200 alerts, used by
@@ -549,10 +553,13 @@ backend mkdirs it lazily).
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /monitoring/alerts` | Paginated list, newest first, optional `?source=drone\|webcam\|pc_camera` filter — what the Detection Alerts table renders. |
-| `GET /monitoring/alerts/summary` | `{ total, by_source, max_confidence, last_time_str, last_source, last_by_source }` — drives the summary tiles. |
+| `GET /monitoring/alerts` | Paginated list, newest first, optional `?source=drone\|webcam\|pc_camera\|demo` and `?filter=all\|unread\|read` filters. |
+| `GET /monitoring/alerts/summary` | `{ total, unread_count, read_count, by_source, max_confidence, last_time_str, last_source, last_by_source }` — drives the summary tiles. |
 | `GET /monitoring/alerts/latest` | `{ alert: <single alert> | null }` — cheap poll target for the in-app notification banner. |
 | `GET /monitoring/alerts/{alert_id}` | One alert with the full per-detection list (label / confidence / bbox). |
+| `POST /monitoring/alerts/{alert_id}/read` | Mark one alert as read in the sidecar. |
+| `POST /monitoring/alerts/{alert_id}/unread` | Mark one alert unread again. |
+| `POST /monitoring/alerts/mark-all-read` | Mark every currently logged alert as read. |
 | `POST /monitoring/alerts/test?label=fire&confidence=0.78&source=demo` | Append a synthetic alert through the real persistence path when `DEMO_ALERTS_ENABLED=true`. Useful when no camera/drone hardware is available; the frontend hides the **Test alert** button when `/system/config` reports demo alerts disabled. |
 | `GET /monitoring/notifications` | Recent ring-buffer view (subset of JSONL). |
 

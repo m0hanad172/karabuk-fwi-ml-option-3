@@ -92,6 +92,14 @@ OpenCV can access the device. In Docker on Windows, the dashboard should
 show a clean camera-unavailable state unless device passthrough is
 configured.
 
+## Detection Alerts tab
+
+Detection Alerts reads the append-only JSONL evidence log through
+`/monitoring/alerts*`. Operators can filter All / Unread / Read, mark
+one alert as read, or mark all alerts read. Read state is persisted by
+the backend in a small sidecar file, so refreshing the browser or
+restarting the backend does not reset unread counts.
+
 ## Time / locale
 
 All operational timestamps in the UI are rendered in

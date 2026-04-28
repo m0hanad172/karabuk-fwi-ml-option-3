@@ -20,6 +20,7 @@
 # What it will NEVER remove:
 #   - backend/outputs/karabuk_fwi.db        (active SQLite DB)
 #   - backend/data/notifications/alerts.jsonl
+#   - backend/data/notifications/alerts_read_state.json
 #   - backend/data/notifications/*.jpg
 #   - SQLite backup files (*.db.bak, *.sqlite.bak, *.empty.bak)
 #   - .venv  /  venv
@@ -49,7 +50,7 @@ if (-not $Apply) {
     Write-Host "[dry-run] Listing what would be removed. Pass -Apply to delete." -ForegroundColor Yellow
 } else {
     Write-Host "WARNING: -Apply deletes only the safe cache/build items listed below." -ForegroundColor Yellow
-    Write-Host "Protected runtime DBs, alert JSONL/JPG evidence, venvs, node_modules, and DB backups are never deleted." -ForegroundColor Yellow
+    Write-Host "Protected runtime DBs, alert JSONL/read-state/JPG evidence, venvs, node_modules, and DB backups are never deleted." -ForegroundColor Yellow
 }
 Write-Host "Repo root: $repoRoot"
 Write-Host ""

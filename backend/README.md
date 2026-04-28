@@ -157,6 +157,8 @@ webcam / PC camera) are persisted independently of `run_history`:
 
 - **JSONL evidence log:** `data/notifications/alerts.jsonl`
   (append-only, lock-protected).
+- **Read-state sidecar:** `data/notifications/alerts_read_state.json`
+  stores read alert ids so the evidence log stays append-only.
 - **JPEG snapshots:** `data/notifications/<source>_<ts>.jpg`, served
   via the FastAPI static mount at `/static/notifications/`.
 - **In-memory ring buffer (200 entries):** rehydrated from the JSONL
@@ -173,6 +175,10 @@ section in the root README):
 - `GET /monitoring/alerts/latest` — single most-recent alert (cheap
   poll target for the in-app banner).
 - `GET /monitoring/alerts/{alert_id}` — single alert with bboxes.
+- `POST /monitoring/alerts/{alert_id}/read` / `unread` — update
+  read state in the sidecar.
+- `POST /monitoring/alerts/mark-all-read` — mark every current alert
+  as read without rewriting `alerts.jsonl`.
 - `POST /monitoring/alerts/test` — append a synthetic alert via the
   real persistence path when `DEMO_ALERTS_ENABLED=true`. Useful for
   end-to-end testing the dashboard when no camera / drone hardware is
@@ -180,9 +186,10 @@ section in the root README):
 
 The whole `data/notifications/` tree is gitignored runtime state.
 Adding `?source=drone|webcam|pc_camera` to the list endpoint filters
-the evidence log; demo alerts (`POST /alerts/test`) are tagged
-`source="demo"` so they are easy to filter or review separately. Do not
-delete the alert log as part of normal cleanup.
+the evidence log; adding `?filter=unread|read` filters by read state.
+Demo alerts (`POST /alerts/test`) are tagged `source="demo"` so they
+are easy to filter or review separately. Do not delete the alert log or
+read-state sidecar as part of normal cleanup.
 
 `GET /system/config` returns the safe public runtime flags consumed by
 the frontend: `backend_env`, `service_mode`, `demo_alerts_enabled`, and
@@ -218,6 +225,15 @@ Desktop on Windows does not expose physical webcams to Linux containers
 by default; in that runtime the camera cards should remain usable and
 show: "Camera is unavailable in this runtime. For webcam monitoring,
 run the backend locally or configure Docker device passthrough."
+
+For a host-side diagnosis without starting the API server:
+
+```bash
+python backend/scripts/check_cameras.py --max-index 4
+```
+
+`GET /monitoring/runtime` returns the same runtime hint consumed by the
+frontend (`in_docker`, `host_os`, and `camera_passthrough_supported`).
 
 ## Scheduler
 

@@ -216,6 +216,8 @@ OpenCV; the browser only displays the backend MJPEG stream. For a live
 webcam demo on Windows, run `python backend/scripts/serve.py` on the
 host and use **Devices Detected** / **Auto-detect** to map indices from
 `backend/data/camera_mapping.json`.
+Use `python backend/scripts/check_cameras.py` for a quick host-side
+OpenCV diagnostic.
 
 **Docker note:** Docker Desktop on Windows usually cannot see the
 physical webcam without device passthrough. Docker remains the preferred
@@ -244,10 +246,14 @@ usable and show a camera-unavailable message instead of a broken stream.
 | `/monitoring/cameras` | GET | Per-camera status (used by Monitoring tab) |
 | `/monitoring/drone/status` | GET | Drone feed status (Monitoring tab) |
 | `/monitoring/notifications` | GET | Live ring-buffer of recent detections |
-| `/monitoring/alerts` | GET | Durable detection alerts list (Detection Alerts tab) |
-| `/monitoring/alerts/summary` | GET | Totals + by-source counts (Detection Alerts summary tiles) |
+| `/monitoring/runtime` | GET | Runtime hint for camera availability and Docker passthrough |
+| `/monitoring/alerts` | GET | Durable detection alerts list; supports `filter=all\|unread\|read` |
+| `/monitoring/alerts/summary` | GET | Totals, unread/read counts, and by-source counts |
 | `/monitoring/alerts/latest` | GET | Most recent alert — cheap poll for the in-app banner |
 | `/monitoring/alerts/{id}` | GET | Single alert with bboxes (detail drawer) |
+| `/monitoring/alerts/{id}/read` | POST | Mark one detection alert as read |
+| `/monitoring/alerts/{id}/unread` | POST | Mark one detection alert unread again |
+| `/monitoring/alerts/mark-all-read` | POST | Mark all current detection alerts as read |
 | `/monitoring/alerts/test` | POST | Append a synthetic alert (demo / smoke-test) |
 | `/monitoring/.../feed` | misc | MJPEG streams |
 
@@ -300,6 +306,11 @@ It does not overwrite the active alert log or fabricate `run_history`;
 use the UI **Run Manual Check** button or `POST /risk/check` for a real
 run-history row.
 
+Detection alert read/unread state is stored in
+`backend/data/notifications/alerts_read_state.json` next to the JSONL
+evidence log. The sidecar is runtime data and should be backed up or
+cleared together with `alerts.jsonl`, not committed.
+
 Cleanup is dry-run by default:
 
 ```powershell
@@ -308,7 +319,8 @@ powershell -ExecutionPolicy Bypass -File scripts\cleanup_local.ps1 -Apply
 ```
 
 It removes caches/build output only and protects the active SQLite DB,
-Detection Alerts JSONL/JPGs, `.venv`, `node_modules`, and DB backups.
+Detection Alerts JSONL/read-state/JPGs, `.venv`, `node_modules`, and
+DB backups.
 The old `.claude/` worktree directory is ignored and should be removed
 locally if it reappears; it is not part of the current Codex/main branch
 workflow.
