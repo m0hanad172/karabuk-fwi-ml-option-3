@@ -345,7 +345,7 @@ class TestDetectionAlertsLatestAndTest:
         assert created["max_confidence"] == 0.91
 
         # Lands in summary, list, and latest — all three reading from
-        # the same JSONL evidence log, so they must agree on the count
+        # the same SQLite table, so they must agree on the count
         # and the most-recent id.
         after = client.get("/monitoring/alerts/summary").json()
         assert after["total"] == 1
@@ -443,12 +443,12 @@ class TestDemoAlertGating:
 
 
 class TestDetectionAlertsReadState:
-    """Coverage for the read/unread sidecar (Option A persistence).
+    """Coverage for SQLite read/unread persistence.
 
     Each alert is unread by default; ``mark-read`` flips a single
     alert; ``mark-all-read`` flips every currently-unread alert in
-    one shot. Sidecar state survives backend restarts because the
-    file lives next to the JSONL evidence log."""
+    one shot. State survives backend restarts because it lives in the
+    ``detection_alerts`` table."""
 
     def test_new_alert_is_unread_by_default(self, client):
         notif.clear_notifications()
@@ -465,6 +465,8 @@ class TestDetectionAlertsReadState:
         assert s["total"] == 3
         assert s["unread_count"] == 3
         assert s["read_count"] == 0
+        assert s["latest_alert"] is not None
+        assert s["latest_alert"]["read"] is False
         # mark one read → counts shift
         r = client.post(f"/monitoring/alerts/{a1['id']}/read")
         assert r.status_code == 200
@@ -488,6 +490,7 @@ class TestDetectionAlertsReadState:
         assert all(a["read"] is False for a in unread)
         assert len(read) == 1
         assert all(a["read"] is True for a in read)
+        assert {a["id"] for a in unread}.isdisjoint({a["id"] for a in read})
 
     def test_mark_all_read_flips_only_unread(self, client):
         notif.clear_notifications()
@@ -518,10 +521,9 @@ class TestDetectionAlertsReadState:
         assert r.status_code == 404
 
     def test_read_state_persists_across_module_lookups(self, client):
-        # Simulates a backend restart: the JSONL file + sidecar JSON
-        # are on disk, the in-memory ring buffer can be empty, and the
-        # API still answers correctly because it reads the sidecar
-        # fresh on every call.
+        # Simulates a backend restart: the in-memory ring buffer can be
+        # empty, and the API still answers correctly because it reads
+        # SQLite on every call.
         notif.clear_notifications()
         a = client.post("/monitoring/alerts/test").json()
         client.post(f"/monitoring/alerts/{a['id']}/read")
@@ -532,6 +534,47 @@ class TestDetectionAlertsReadState:
         again = client.get(f"/monitoring/alerts/{a['id']}").json()
         assert again["read"] is True
         assert again["read_at"]
+
+    def test_snapshot_status_reports_missing_and_ready(self, client):
+        notif.clear_notifications()
+        missing = notif.add_notification(
+            "webcam",
+            [{"label": "fire", "confidence": 0.7, "bbox": [0, 0, 1, 1]}],
+            image_path="/static/notifications/not-written-yet.jpg",
+        )
+        assert missing["snapshot_ready"] is False
+
+        ready_file = notif.NOTIFICATIONS_DIR / "ready.jpg"
+        ready_file.parent.mkdir(parents=True, exist_ok=True)
+        ready_file.write_bytes(b"fake-jpeg")
+        ready = notif.add_notification(
+            "webcam",
+            [{"label": "fire", "confidence": 0.8, "bbox": [0, 0, 1, 1]}],
+            image_path="/static/notifications/ready.jpg",
+        )
+        assert ready["snapshot_ready"] is True
+        assert ready["snapshot_version"] is not None
+
+        rows = client.get("/monitoring/alerts").json()["alerts"]
+        by_id = {a["id"]: a for a in rows}
+        assert by_id[missing["id"]]["snapshot_ready"] is False
+        assert by_id[ready["id"]]["snapshot_ready"] is True
+
+    def test_imported_legacy_alerts_default_unread_without_sidecar(self, client):
+        notif.clear_notifications()
+        notif.ALERTS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        notif.ALERTS_LOG_PATH.write_text(
+            '{"id":"legacy-1","source":"webcam","timestamp":1,'
+            '"time_str":"2026-04-28 10:00:00","detection_count":1,'
+            '"max_confidence":0.5,"image":null,'
+            '"detections":[{"label":"smoke","confidence":0.5,"bbox":[0,0,1,1]}]}'
+            "\n",
+            encoding="utf-8",
+        )
+        assert notif.import_legacy_jsonl() == 1
+        alert = client.get("/monitoring/alerts/legacy-1").json()
+        assert alert["read"] is False
+        assert alert["read_at"] is None
 
 
 class TestMonitoringRuntime:

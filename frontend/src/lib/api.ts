@@ -208,9 +208,10 @@ export interface DetectionBBox {
 
 export interface DetectionAlert extends MonitoringNotification {
   detections: DetectionBBox[];
-  // Sidecar read-state fields. Older payloads (clients that hit the
-  // backend before the read/unread feature was added) may not carry
-  // these — treat missing fields as "unread".
+  snapshot_ready?: boolean;
+  snapshot_version?: number | null;
+  // SQLite read-state fields. Older payloads may not carry these;
+  // treat missing fields as "unread".
   read?: boolean;
   read_at?: string | null;
 }
@@ -224,6 +225,7 @@ export interface DetectionAlertsSummary {
   last_time_str: string | null;
   last_source: string | null;
   last_by_source: Record<string, string>;
+  latest_alert?: DetectionAlert | null;
 }
 
 export interface AnalyticsData {
@@ -359,4 +361,14 @@ export const api = {
 // Build an absolute URL to a backend resource (MJPEG feed, static image, etc).
 export function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
+}
+
+export function snapshotUrl(
+  path: string,
+  version?: number | null,
+  attempt = 0,
+): string {
+  const token = version ?? Date.now();
+  const sep = path.includes("?") ? "&" : "?";
+  return `${apiUrl(path)}${sep}t=${token}&attempt=${attempt}`;
 }

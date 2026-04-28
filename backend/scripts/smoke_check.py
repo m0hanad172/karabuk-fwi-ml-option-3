@@ -31,6 +31,7 @@ collaborator can wire it into a one-line CI step or a git hook.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sqlite3
 import sys
@@ -57,6 +58,7 @@ DASHBOARD_ENDPOINTS = [
     "/monitoring/notifications",
     "/monitoring/alerts?limit=5",
     "/monitoring/alerts?filter=unread&limit=5",
+    "/monitoring/alerts?filter=read&limit=5",
     "/monitoring/alerts/summary",
     "/monitoring/alerts/latest",
     "/monitoring/cameras",
@@ -65,6 +67,9 @@ DASHBOARD_ENDPOINTS = [
 ]
 ACCEPTABLE_EMPTY_STATE_STATUS = {
     "/risk/latest": {404},
+    # External weather API outages should not make a local hardware
+    # smoke check fail the whole backend/dashboard stack.
+    "/weather/live": {502},
 }
 
 
@@ -178,6 +183,7 @@ def _check_endpoints_in_process() -> list[str]:
                     extra = f"list[{len(j)}]"
                 elif isinstance(j, dict):
                     extra = " ".join(list(j.keys())[:4])
+                    failures += _validate_alert_contract(path, j)
             else:
                 extra = r.text[:60]
             print(f"  [{flag:>4}] {r.status_code:>4}  {path:<48} {extra}")
@@ -200,6 +206,12 @@ def _check_endpoints_remote(base_url: str) -> list[str]:
                 ok = _status_ok(path, resp.status)
                 flag = "OK" if ok else "FAIL"
                 print(f"  [{flag:>4}] {resp.status:>4}  {path}")
+                if ok:
+                    raw = resp.read().decode("utf-8", errors="replace")
+                    try:
+                        failures += _validate_alert_contract(path, json.loads(raw))
+                    except json.JSONDecodeError:
+                        pass
                 if not ok:
                     failures.append(f"{path} -> {resp.status}")
         except urllib.error.HTTPError as e:
@@ -211,6 +223,28 @@ def _check_endpoints_remote(base_url: str) -> list[str]:
         except Exception as e:  # noqa: BLE001
             print(f"  [FAIL] ERR   {path}  ({e})")
             failures.append(f"{path} -> {e}")
+    return failures
+
+
+def _validate_alert_contract(path: str, payload: object) -> list[str]:
+    """Pin the Detection Alerts read-state API shape used by the UI."""
+    failures: list[str] = []
+    if not isinstance(payload, dict):
+        return failures
+    if path == "/monitoring/alerts/summary":
+        for key in ("total", "unread_count", "read_count", "latest_alert"):
+            if key not in payload:
+                failures.append(f"{path} missing key: {key}")
+    if path.startswith("/monitoring/alerts?filter=unread"):
+        for alert in payload.get("alerts", []):
+            if alert.get("read") is not False:
+                failures.append(f"{path} returned non-unread alert: {alert.get('id')}")
+                break
+    if path.startswith("/monitoring/alerts?filter=read"):
+        for alert in payload.get("alerts", []):
+            if alert.get("read") is not True:
+                failures.append(f"{path} returned non-read alert: {alert.get('id')}")
+                break
     return failures
 
 

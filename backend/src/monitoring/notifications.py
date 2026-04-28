@@ -126,6 +126,7 @@ def _row_to_alert(row: sqlite3.Row) -> dict:
             detections = json.loads(row["detections_json"])
         except (TypeError, ValueError):
             detections = []
+    snapshot_ready, snapshot_version = _snapshot_status(row["snapshot_path"])
     return {
         "id": row["alert_id"],
         "source": row["source"],
@@ -143,6 +144,8 @@ def _row_to_alert(row: sqlite3.Row) -> dict:
         "label": row["label"],
         "image": row["snapshot_path"],
         "snapshot_path": row["snapshot_path"],
+        "snapshot_ready": snapshot_ready,
+        "snapshot_version": snapshot_version,
         "severity": row["severity"],
         "message": row["message"],
         "camera_id": row["camera_id"],
@@ -180,6 +183,31 @@ def _severity_for(label: str, confidence: float) -> str:
     return "info"
 
 
+def _snapshot_file_for(snapshot_path: str | None) -> Path | None:
+    """Resolve a public static snapshot URL to its local file."""
+    if not snapshot_path:
+        return None
+    prefix = "/static/notifications/"
+    if not snapshot_path.startswith(prefix):
+        return None
+    filename = Path(snapshot_path).name
+    if not filename:
+        return None
+    return NOTIFICATIONS_DIR / filename
+
+
+def _snapshot_status(snapshot_path: str | None) -> tuple[bool, int | None]:
+    """Return whether a snapshot exists and a cache-busting mtime token."""
+    path = _snapshot_file_for(snapshot_path)
+    if path is None:
+        return False, None
+    try:
+        stat = path.stat()
+    except OSError:
+        return False, None
+    return stat.st_size > 0, int(stat.st_mtime)
+
+
 # ---------------------------------------------------------------------------
 # Write path — the public entry point detection threads call.
 # ---------------------------------------------------------------------------
@@ -205,7 +233,7 @@ def add_notification(
     iso = istanbul_now().isoformat()
     label = (clean_dets[0]["label"] if clean_dets else "fire") or "fire"
     max_conf = max((d["confidence"] for d in clean_dets), default=0.0)
-    alert_id = str(int(now * 1000))
+    alert_id = str(time.time_ns())
 
     raw_payload = {
         "id": alert_id,
@@ -264,10 +292,13 @@ def add_notification(
         if len(_notifications) > _MAX_NOTIFICATIONS:
             del _notifications[: len(_notifications) - _MAX_NOTIFICATIONS]
 
+    snapshot_ready, snapshot_version = _snapshot_status(image_path)
     return {
         **raw_payload,
         "label": label,
         "snapshot_path": image_path,
+        "snapshot_ready": snapshot_ready,
+        "snapshot_version": snapshot_version,
         "severity": _severity_for(label, max_conf),
         "camera_id": source,
         "message": f"{label} detected on {source} at {max_conf*100:.1f}% confidence",
@@ -289,7 +320,10 @@ def save_snapshot(source: str, frame_bgr) -> str | None:
         ts = istanbul_now().strftime("%Y%m%d_%H%M%S_%f")
         filename = f"{source}_{ts}.jpg"
         filepath = out_dir / filename
-        cv2.imwrite(str(filepath), frame_bgr)
+        ok = cv2.imwrite(str(filepath), frame_bgr)
+        if not ok:
+            logger.warning("OpenCV failed to write snapshot: %s", filepath)
+            return None
         return f"/static/notifications/{filename}"
     except Exception as e:  # noqa: BLE001
         logger.warning("Failed to save snapshot: %s", e)
@@ -390,6 +424,7 @@ def alerts_summary() -> dict:
                 "last_time_str": None,
                 "last_source": None,
                 "last_by_source": {},
+                "latest_alert": None,
             }
         by_source_rows = conn.execute(
             "SELECT source, COUNT(*) AS n FROM detection_alerts GROUP BY source"
@@ -439,6 +474,7 @@ def alerts_summary() -> dict:
         "last_time_str": last_alert["time_str"] if last_alert else None,
         "last_source": last_alert["source"] if last_alert else None,
         "last_by_source": last_by_source,
+        "latest_alert": last_alert,
     }
 
 

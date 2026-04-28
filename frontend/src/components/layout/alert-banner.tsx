@@ -3,11 +3,11 @@
 import { AlertTriangle, Bell, Flame, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { api, apiUrl, type DetectionAlert } from "@/lib/api";
+import { api, snapshotUrl, type DetectionAlert } from "@/lib/api";
 
 /**
  * Visible in-app banner that fires when a new fire/smoke detection
- * lands in the JSONL evidence log.
+ * lands in the SQLite Detection Alerts store.
  *
  * Why this lives in the app shell, not the Detection Alerts tab:
  *  - It must be visible across every tab — the supervisor should see
@@ -33,6 +33,7 @@ const AUTO_DISMISS_MS = 12_000;
 
 export function AlertBanner() {
   const [active, setActive] = useState<DetectionAlert | null>(null);
+  const [snapshotFailed, setSnapshotFailed] = useState(false);
   // Tracks the id of the most recently observed alert across polls.
   // Initialised on the first successful response — without this guard
   // the banner would fire on every fresh page load for the existing
@@ -51,6 +52,10 @@ export function AlertBanner() {
     }
     setActive(null);
   }, []);
+
+  useEffect(() => {
+    setSnapshotFailed(false);
+  }, [active?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +87,7 @@ export function AlertBanner() {
 
         if (alert.id !== seenIdRef.current) {
           seenIdRef.current = alert.id;
+          setSnapshotFailed(false);
           setActive(alert);
           if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
           dismissTimerRef.current = setTimeout(() => {
@@ -154,11 +160,12 @@ export function AlertBanner() {
             {confPct ? ` · ${confPct} confidence` : ""}
             {active.time_str ? ` · ${active.time_str}` : ""}
           </p>
-          {active.image && (
+          {active.image && !snapshotFailed && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={apiUrl(active.image)}
+              src={snapshotUrl(active.image, active.snapshot_version)}
               alt={`${label} detection snapshot`}
+              onError={() => setSnapshotFailed(true)}
               className="mt-2 rounded-sm border"
               style={{
                 maxWidth: "100%",

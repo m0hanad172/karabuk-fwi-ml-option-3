@@ -30,7 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useApi } from "@/hooks/use-api";
-import { api, apiUrl, type DetectionAlert } from "@/lib/api";
+import { api, snapshotUrl, type DetectionAlert } from "@/lib/api";
 
 /**
  * Detection Alerts — operational evidence centre.
@@ -43,8 +43,8 @@ import { api, apiUrl, type DetectionAlert } from "@/lib/api";
  * them auditable and browsable.
  *
  * Data model recap:
- *  - alerts live in `data/notifications/alerts.jsonl` (append-only)
- *  - snapshots live as JPEGs in the same directory, served via
+ *  - alerts live in SQLite table `detection_alerts`
+ *  - snapshots live as JPEGs in `data/notifications/`, served via
  *    `/static/notifications/<file>` by a FastAPI static mount
  *  - each alert carries the full per-detection list (label, confidence,
  *    bbox) so the detail drawer can render a proper evidence sheet
@@ -106,6 +106,18 @@ export function DetectionAlerts() {
     [refetchAll],
   );
 
+  const markOneUnread = useCallback(
+    async (id: string) => {
+      try {
+        await api.markDetectionAlertUnread(id);
+      } catch {
+        // Best effort: the list refresh below restores server truth.
+      }
+      refetchAll();
+    },
+    [refetchAll],
+  );
+
   const markAllRead = useCallback(async () => {
     setMarkingAll(true);
     try {
@@ -148,8 +160,8 @@ export function DetectionAlerts() {
         />
         <span>
           <span className="font-semibold">Durable evidence log.</span> Every
-          fire detection ever raised by the drone, webcam and PC camera — saved
-          append-only to disk with snapshots. For live feeds, see the{" "}
+          fire detection ever raised by the drone, webcam and PC camera is
+          saved in SQLite with snapshot evidence. For live feeds, see the{" "}
           <span className="font-medium">Monitoring</span> tab.
         </span>
       </div>
@@ -167,7 +179,7 @@ export function DetectionAlerts() {
               Detection Alerts
             </h3>
             <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
-              Durable append-only log of every fire detection raised by the
+              Durable SQLite log of every fire detection raised by the
               drone, webcam and PC camera feeds. Strictly separate from the
               prediction pipeline — alerts here never influence the FWI
               decision or the drone launch policy.
@@ -304,8 +316,8 @@ export function DetectionAlerts() {
           />
         </div>
         {/* Read-state filter + bulk action. Backed by the read-state
-            sidecar at backend/data/notifications/alerts_read_state.json
-            so unread/read state survives backend restarts. */}
+            detection_alerts table so unread/read state survives backend
+            restarts. */}
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[11px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5 mr-2">
             <Mail className="h-3 w-3" aria-hidden />
@@ -425,11 +437,9 @@ export function DetectionAlerts() {
                       alert={alert}
                       onOpen={() => {
                         setSelectedId(alert.id);
-                        // Opening the detail drawer counts as reading the
-                        // alert. No-op if already read.
-                        if (!alert.read) markOneRead(alert.id);
                       }}
                       onMarkRead={() => markOneRead(alert.id)}
+                      onMarkUnread={() => markOneUnread(alert.id)}
                     />
                   ))}
                 </TableBody>
@@ -597,10 +607,12 @@ function AlertRow({
   alert,
   onOpen,
   onMarkRead,
+  onMarkUnread,
 }: {
   alert: DetectionAlert;
   onOpen: () => void;
   onMarkRead: () => void;
+  onMarkUnread: () => void;
 }) {
   const confidencePct = Math.max(0, Math.min(alert.max_confidence, 1));
   const accent =
@@ -638,7 +650,7 @@ function AlertRow({
         />
       </TableCell>
       <TableCell>
-        <AlertThumb image={alert.image} label={alert.source} />
+        <AlertThumb alert={alert} />
       </TableCell>
       <TableCell>
         <SourceBadge source={alert.source} />
@@ -687,46 +699,120 @@ function AlertRow({
             <span className="sr-only">Mark as read</span>
           </Button>
         ) : (
-          <span aria-hidden className="text-[11px] text-muted-foreground">
-            ✓
-          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onMarkUnread}
+            title="Mark as unread"
+            className="h-8 w-8 p-0"
+          >
+            <Mail className="h-4 w-4" aria-hidden />
+            <span className="sr-only">Mark as unread</span>
+          </Button>
         )}
       </TableCell>
     </TableRow>
   );
 }
 
-function AlertThumb({
-  image,
-  label,
+function AlertThumb({ alert }: { alert: DetectionAlert }) {
+  return (
+    <SnapshotImage
+      alert={alert}
+      className="h-12 w-16 object-cover rounded border"
+      placeholderClassName="h-12 w-16 rounded border"
+      compact
+    />
+  );
+}
+
+function SnapshotImage({
+  alert,
+  className,
+  placeholderClassName,
+  compact = false,
 }: {
-  image: string | null;
-  label: string;
+  alert: DetectionAlert;
+  className: string;
+  placeholderClassName: string;
+  compact?: boolean;
 }) {
-  if (image) {
+  const [attempt, setAttempt] = useState(0);
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const image = alert.image;
+
+  useEffect(() => {
+    if (!image) {
+      setLoadedSrc(null);
+      setFailed(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadedSrc(null);
+    setFailed(false);
+    const src = snapshotUrl(image, alert.snapshot_version, attempt);
+    const img = new window.Image();
+    img.onload = () => {
+      if (!cancelled) setLoadedSrc(src);
+    };
+    img.onerror = () => {
+      if (!cancelled) {
+        if (attempt < 5) {
+          window.setTimeout(() => {
+            if (!cancelled) setAttempt((value) => value + 1);
+          }, 1_200);
+        } else {
+          setFailed(true);
+        }
+      }
+    };
+    img.src = src;
+    return () => {
+      cancelled = true;
+    };
+  }, [image, alert.snapshot_version, attempt]);
+
+  useEffect(() => {
+    setAttempt(0);
+  }, [image, alert.snapshot_version]);
+
+  if (image && loadedSrc) {
+    // eslint-disable-next-line @next/next/no-img-element
     return (
-      // Using a plain <img> here because the snapshot URLs are served by
-      // the FastAPI static mount on a different origin during dev —
-      // next/image would require remotePatterns config. Fine for a
-      // thumbnail; alt text keeps it accessible.
-      // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={apiUrl(image)}
-        alt={`${label} fire detection snapshot`}
-        className="h-12 w-16 object-cover rounded border"
+        src={loadedSrc}
+        alt={`Fire detection snapshot from ${sourceLabel(alert.source)} at ${alert.time_str}`}
+        className={className}
         style={{ borderColor: "var(--border)" }}
       />
     );
   }
+
+  const message = !image
+    ? "No snapshot"
+    : failed
+      ? "Snapshot unavailable"
+      : "Snapshot preparing...";
+
   return (
     <div
-      className="h-12 w-16 rounded border flex items-center justify-center"
+      className={`${placeholderClassName} flex items-center justify-center`}
       style={{
         borderColor: "var(--border)",
         background: "var(--muted)",
       }}
+      title={message}
     >
-      <ImageIcon className="h-4 w-4 text-muted-foreground" aria-hidden />
+      {compact ? (
+        <ImageIcon className="h-4 w-4 text-muted-foreground" aria-hidden />
+      ) : (
+        <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground text-sm">
+          <ImageIcon className="h-6 w-6" aria-hidden />
+          <span>{message}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -864,19 +950,11 @@ function AlertDetailDrawer({
                 minHeight: "16rem",
               }}
             >
-              {alert.image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={apiUrl(alert.image)}
-                  alt={`Fire detection snapshot from ${sourceLabel(alert.source)} at ${alert.time_str}`}
-                  className="max-h-[420px] w-auto"
-                />
-              ) : (
-                <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground text-sm">
-                  <ImageIcon className="h-6 w-6" aria-hidden />
-                  No snapshot was saved for this alert.
-                </div>
-              )}
+              <SnapshotImage
+                alert={alert}
+                className="max-h-[420px] w-auto"
+                placeholderClassName="min-h-64 w-full"
+              />
             </div>
 
             {/* Meta grid */}

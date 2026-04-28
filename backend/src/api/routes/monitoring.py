@@ -181,9 +181,10 @@ async def notifications(limit: int = Query(50, ge=1, le=200)):
 
 # --- Detection alerts (durable evidence log) ------------------------------
 #
-# These three endpoints read from the append-only JSONL evidence log at
-# ``data/notifications/alerts.jsonl``. They are strictly detection-side —
-# they never touch ``run_history`` or the Option 3 prediction layer.
+# These endpoints read/write the SQLite ``detection_alerts`` table.
+# Snapshot files remain on disk under ``data/notifications``. They are
+# strictly detection-side and never touch ``run_history`` or the Option
+# 3 prediction layer.
 
 
 @router.get("/alerts", summary="List durable detection alerts (evidence log)")
@@ -200,7 +201,7 @@ async def list_alerts(
         pattern="^(all|unread|read)$",
         description=(
             "Optional read-state filter: 'all' (default), 'unread', or 'read'. "
-            "Backed by the alerts_read_state.json sidecar."
+            "Backed by the detection_alerts.is_read column."
         ),
     ),
 ):
@@ -258,13 +259,11 @@ async def alerts_test(
     """Create a synthetic alert through the real persistence path.
 
     Useful when no camera / drone hardware is available — the alert
-    lands in the JSONL evidence log and the in-memory ring buffer
+    lands in SQLite and the in-memory ring buffer
     just like a real YOLO detection, so you can verify the Detection
     Alerts tab, the dashboard banner, and ``/alerts/summary`` all
-    react correctly. Demo alerts persist across backend restarts; if
-    you want a clean slate, delete them by editing
-    ``backend/data/notifications/alerts.jsonl`` (the file is
-    gitignored runtime state).
+    react correctly. Demo alerts persist across backend restarts in
+    the runtime SQLite database.
 
     Returns 404 when ``DEMO_ALERTS_ENABLED=false`` (or under
     ``BACKEND_ENV=production`` without an explicit enable) so the
