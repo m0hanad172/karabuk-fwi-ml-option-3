@@ -147,6 +147,38 @@ Per-artefact reference: [`models/README.md`](./models/README.md).
 The detection layer never writes to `run_history` or `system_state` —
 that boundary is enforced by code review, not by a constraint.
 
+## Detection Alerts
+
+Fire / smoke detections raised by the monitoring layer (drone /
+webcam / PC camera) are persisted independently of `run_history`:
+
+- **JSONL evidence log:** `data/notifications/alerts.jsonl`
+  (append-only, lock-protected).
+- **JPEG snapshots:** `data/notifications/<source>_<ts>.jpg`, served
+  via the FastAPI static mount at `/static/notifications/`.
+- **In-memory ring buffer (200 entries):** rehydrated from the JSONL
+  log on every backend boot via
+  `notifications.hydrate_ring_buffer_from_log()`, so the live feed
+  is never empty after a restart.
+
+Endpoints (full table: see the
+[Detection Alerts and Dashboard Notifications](../README.md#detection-alerts-and-dashboard-notifications)
+section in the root README):
+
+- `GET /monitoring/alerts` — durable list, newest first.
+- `GET /monitoring/alerts/summary` — totals + by-source counts.
+- `GET /monitoring/alerts/latest` — single most-recent alert (cheap
+  poll target for the in-app banner).
+- `GET /monitoring/alerts/{alert_id}` — single alert with bboxes.
+- `POST /monitoring/alerts/test` — append a synthetic alert via the
+  real persistence path. Useful for end-to-end testing the dashboard
+  when no camera / drone hardware is plugged in.
+
+The whole `data/notifications/` tree is gitignored runtime state.
+Adding `?source=drone|webcam|pc_camera` to the list endpoint filters
+the evidence log; demo alerts (`POST /alerts/test`) are tagged
+`source="demo"` so they are easy to filter or remove later.
+
 ## Scheduler
 
 APScheduler boots two cron-style jobs in `Europe/Istanbul`:

@@ -412,6 +412,12 @@ Run the one-shot migration:
 python backend/scripts/migrate_run_timestamps_to_istanbul.py
 ```
 
+**Detection Alerts tab is empty.** See the
+[Detection Alerts and Dashboard Notifications](#detection-alerts-and-dashboard-notifications)
+section below — usually means the JSONL evidence log is at a stale
+location, or no alerts have been raised yet (click **Test alert** in
+the tab header to verify the pipeline is wired up).
+
 **Dashboard is empty (no Overview tile, no Run History rows).**
 Almost always one of three things — the smoke check tells you
 which:
@@ -443,6 +449,112 @@ python backend/scripts/smoke_check.py
    ```
    Both DBs share the same schema, so the data lands in the
    correct tables.
+
+---
+
+## Detection Alerts and Dashboard Notifications
+
+The **Detection Alerts** tab is the durable evidence centre for every
+fire / smoke detection raised by the drone, webcam, or PC camera. It
+is strictly separate from the FWI prediction pipeline — alerts here
+never influence `predicted_fwi`, `high_risk_flag`, or the drone
+launch policy.
+
+### Storage
+
+- **JSONL evidence log:** `backend/data/notifications/alerts.jsonl`
+  (append-only, one JSON object per line). This is the durable
+  store. Survives restart — the FastAPI lifespan startup calls
+  `hydrate_ring_buffer_from_log()` to rehydrate the live ring
+  buffer.
+- **JPEG snapshots:** `backend/data/notifications/<source>_<ts>.jpg`,
+  served via the FastAPI static mount at `/static/notifications/`.
+- **In-memory ring buffer:** the most recent ~200 alerts, used by
+  the live `/monitoring/notifications` feed. Always a subset of the
+  JSONL log.
+
+The whole `backend/data/notifications/` tree is **gitignored runtime
+state** — fresh detections do not dirty the working tree. If you
+clone the repo, the directory is created on first detection (the
+backend mkdirs it lazily).
+
+### Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /monitoring/alerts` | Paginated list, newest first, optional `?source=drone\|webcam\|pc_camera` filter — what the Detection Alerts table renders. |
+| `GET /monitoring/alerts/summary` | `{ total, by_source, max_confidence, last_time_str, last_source, last_by_source }` — drives the summary tiles. |
+| `GET /monitoring/alerts/latest` | `{ alert: <single alert> | null }` — cheap poll target for the in-app notification banner. |
+| `GET /monitoring/alerts/{alert_id}` | One alert with the full per-detection list (label / confidence / bbox). |
+| `POST /monitoring/alerts/test?label=fire&confidence=0.78&source=demo` | Append a synthetic alert through the real persistence path. Useful when no camera/drone hardware is available — see the **Test alert** button in the Detection Alerts tab header. |
+| `GET /monitoring/notifications` | Recent ring-buffer view (subset of JSONL). |
+
+### Dashboard notification banner
+
+A floating banner mounted in the app shell
+(`frontend/src/components/layout/alert-banner.tsx`) polls
+`GET /monitoring/alerts/latest` every 5 seconds. When the latest
+alert id changes (i.e. a new fire / smoke detection lands), it shows
+a top-right banner with the source, confidence, and snapshot
+thumbnail, regardless of which tab the operator has open. The banner
+auto-dismisses after 12 seconds and can be closed manually. The
+first poll after page load primes the seen-id ref but does NOT
+trigger the banner — otherwise every reload would feel like a fresh
+detection.
+
+### How to test without camera hardware
+
+1. Open the **Detection Alerts** tab.
+2. Click **Test alert** in the header. A synthetic `source="demo"`
+   alert appends through the same persistence path as a real
+   detection.
+3. The summary tiles update, the table gains a row, and the
+   floating banner fires (auto-dismisses after 12 s).
+4. The alert is durable — refresh the page and it is still there.
+
+Or, from a shell (smoke / CI use):
+
+```bash
+curl -X POST "http://localhost:8000/monitoring/alerts/test?label=smoke&confidence=0.91"
+```
+
+To wipe demo alerts later, edit
+`backend/data/notifications/alerts.jsonl` and remove the lines with
+`"source": "demo"`. The JSONL file is gitignored runtime state.
+
+### Hardware unavailable
+
+If the camera / drone hardware isn't plugged in, the Monitoring tab
+shows hardware status (cameras list, drone status) and the
+Detection Alerts tab shows the existing JSONL evidence (or a clean
+empty state with the **Test alert** affordance). Neither tab
+crashes — every monitoring import in `backend/src/monitoring/` is
+optional and degrades gracefully (see
+`backend/configs/paths.py::FIRE_DETECTION_MODEL_PATH` and the
+ImportError-tolerant import of `cv2` in `notifications.py`).
+
+### Troubleshooting: Detection Alerts is empty
+
+```bash
+python backend/scripts/smoke_check.py
+```
+
+Look at the `--- endpoints ---` section: if
+`/monitoring/alerts/summary` returns `total=0` but you expect rows,
+the JSONL evidence log is missing or at a stale path. The most
+common cause across the `backend/` restructure: alerts were written
+to `data/notifications/alerts.jsonl` (legacy root) and the
+post-restructure backend now reads
+`backend/data/notifications/alerts.jsonl`. Migrate with:
+
+```bash
+mkdir -p backend/data/notifications
+mv data/notifications/alerts.jsonl backend/data/notifications/
+mv data/notifications/*.jpg        backend/data/notifications/   # if any
+```
+
+Restart the backend; `hydrate_ring_buffer_from_log()` picks the new
+file up automatically.
 
 ---
 

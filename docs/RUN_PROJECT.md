@@ -226,7 +226,15 @@ returns the ring buffer (last 200 events). The dashboard polls every
 | `/history/analytics` | GET | Long-range FWI analytics (used by Analytics tab) |
 | `/weather/live` | GET | Display-only current weather snapshot |
 | `/drone/state` | GET | Read-only drone launch policy |
-| `/monitoring/...` | misc | Detection feeds + notifications |
+| `/monitoring/cameras` | GET | Per-camera status (used by Monitoring tab) |
+| `/monitoring/drone/status` | GET | Drone feed status (Monitoring tab) |
+| `/monitoring/notifications` | GET | Live ring-buffer of recent detections |
+| `/monitoring/alerts` | GET | Durable detection alerts list (Detection Alerts tab) |
+| `/monitoring/alerts/summary` | GET | Totals + by-source counts (Detection Alerts summary tiles) |
+| `/monitoring/alerts/latest` | GET | Most recent alert — cheap poll for the in-app banner |
+| `/monitoring/alerts/{id}` | GET | Single alert with bboxes (detail drawer) |
+| `/monitoring/alerts/test` | POST | Append a synthetic alert (demo / smoke-test) |
+| `/monitoring/.../feed` | misc | MJPEG streams |
 
 ### Operational timing contract
 
