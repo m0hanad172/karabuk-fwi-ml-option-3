@@ -289,6 +289,31 @@ export const api = {
     fetchApi<DetectionAlertsSummary>("/monitoring/alerts/summary"),
   getDetectionAlert: (alertId: string) =>
     fetchApi<DetectionAlert>(`/monitoring/alerts/${alertId}`),
+  // Cheap poll target for the in-app banner. Returns { alert: null } when
+  // no alerts have been raised yet, so callers should null-check.
+  getLatestDetectionAlert: () =>
+    fetchApi<{ alert: DetectionAlert | null }>(
+      "/monitoring/alerts/latest",
+    ),
+  // Demo / smoke-test endpoint — appends a synthetic alert through the
+  // real persistence path. Useful when no camera/drone hardware is
+  // available; alerts tagged source="demo" are easy to filter or
+  // remove from the JSONL file later.
+  createTestDetectionAlert: (
+    label: "fire" | "smoke" = "fire",
+    confidence = 0.78,
+    source = "demo",
+  ) => {
+    const params = new URLSearchParams({
+      label,
+      confidence: String(confidence),
+      source,
+    });
+    return fetchApi<DetectionAlert>(
+      `/monitoring/alerts/test?${params.toString()}`,
+      { method: "POST" },
+    );
+  },
 };
 
 // Build an absolute URL to a backend resource (MJPEG feed, static image, etc).

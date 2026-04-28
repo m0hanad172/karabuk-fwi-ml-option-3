@@ -5,6 +5,7 @@ import {
   Camera,
   Cctv,
   Filter,
+  FlaskConical,
   Gauge,
   Hash,
   ImageIcon,
@@ -130,10 +131,34 @@ export function DetectionAlerts() {
               decision or the drone launch policy.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={refetchAll}>
-            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Demo trigger — useful when no camera/drone hardware is
+                connected. Appends a synthetic alert through the same
+                persistence path as a real YOLO detection so the
+                Detection Alerts tab, the in-app banner, and the
+                summary tiles can all be verified end-to-end. */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                try {
+                  await api.createTestDetectionAlert("fire", 0.78, "demo");
+                  refetchAll();
+                } catch {
+                  // Surfaces via the underlying summary/list error
+                  // states; nothing extra to do here.
+                }
+              }}
+              title="Append a synthetic 'fire' alert (source=demo) for testing the dashboard."
+            >
+              <FlaskConical className="h-3.5 w-3.5 mr-1.5" />
+              Test alert
+            </Button>
+            <Button variant="outline" size="sm" onClick={refetchAll}>
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {summary.error && !summaryData ? (
@@ -255,12 +280,19 @@ export function DetectionAlerts() {
           </div>
         ) : rows.length === 0 ? (
           <div
-            className="rounded-md border border-dashed px-4 py-10 text-center text-sm text-muted-foreground"
+            className="rounded-md border border-dashed px-6 py-10 text-center text-sm text-muted-foreground space-y-2"
             style={{ borderColor: "var(--border)" }}
           >
-            No detection alerts recorded yet. Start a drone or camera feed
-            from the Monitoring tab — fire detections will appear here as
-            the feed runs.
+            <p className="font-medium text-foreground">
+              No detection alerts recorded yet.
+            </p>
+            <p>
+              Alerts will appear here automatically when smoke or fire is
+              detected. Start a drone or camera feed from the Monitoring
+              tab to begin watching, or click <strong>Test alert</strong>{" "}
+              above to append a synthetic alert and verify that the
+              dashboard notification flow is wired up end-to-end.
+            </p>
           </div>
         ) : (
           <div

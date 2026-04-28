@@ -52,7 +52,9 @@ DASHBOARD_ENDPOINTS = [
     "/weather/live",
     "/drone/state",
     "/monitoring/notifications",
+    "/monitoring/alerts?limit=5",
     "/monitoring/alerts/summary",
+    "/monitoring/alerts/latest",
     "/monitoring/cameras",
     "/monitoring/drone/status",
 ]

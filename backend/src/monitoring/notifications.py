@@ -265,6 +265,64 @@ def get_alert_by_id(alert_id: str) -> dict | None:
     return None
 
 
+def latest_alert() -> dict | None:
+    """Return the most recently appended alert from the evidence log, or None.
+
+    Backs the ``GET /monitoring/alerts/latest`` endpoint, which the
+    dashboard polls every few seconds to surface a visible in-app
+    banner the moment a new fire detection lands. Reads the evidence
+    log fresh on each call — the JSONL file is small (one line per
+    alert, append-only) so this is cheap, and it means we never miss
+    an alert written by another process or a background detection
+    thread.
+    """
+    alerts = _read_alert_log()
+    return alerts[-1] if alerts else None
+
+
+def add_demo_alert(
+    label: str = "fire",
+    confidence: float = 0.78,
+    source: str = "demo",
+) -> dict:
+    """Append a synthetic alert for UI / smoke-test purposes.
+
+    Backs the ``POST /monitoring/alerts/test`` endpoint, which is
+    invaluable when no camera or drone hardware is available — a
+    collaborator (or a CI smoke test) can trigger a real evidence-log
+    write and confirm that the Detection Alerts tab, the dashboard
+    notification banner, and the alert summary tiles all light up
+    correctly.
+
+    The entry goes through the same code path as a real detection
+    (``add_notification`` writes to the ring buffer AND the JSONL
+    evidence log), so demo alerts persist across restarts exactly
+    like real ones. They are tagged ``source="demo"`` (or whatever
+    the caller passes) so they are easy to filter or remove later.
+    """
+    label_clean = (label or "fire").strip().lower()
+    if label_clean not in ("fire", "smoke"):
+        label_clean = "fire"
+    try:
+        confidence_clean = float(confidence)
+    except (TypeError, ValueError):
+        confidence_clean = 0.78
+    confidence_clean = max(0.0, min(1.0, confidence_clean))
+
+    return add_notification(
+        source=source,
+        detections=[
+            {
+                "label": label_clean,
+                "confidence": confidence_clean,
+                # Centred placeholder bbox (no real frame to crop from).
+                "bbox": [240, 200, 400, 360],
+            }
+        ],
+        image_path=None,
+    )
+
+
 def alerts_summary() -> dict:
     """Aggregate stats over the full evidence log.
 

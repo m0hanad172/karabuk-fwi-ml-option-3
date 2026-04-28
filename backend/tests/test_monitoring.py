@@ -227,3 +227,99 @@ class TestSeparationFromPrediction:
         notif.add_notification("webcam", [{"confidence": 0.8, "bbox": [0, 0, 1, 1]}])
         after = len(get_run_history(limit=500))
         assert after == before, "monitoring leaked into run_history"
+
+
+class TestDetectionAlertsLatestAndTest:
+    """Coverage for the ``/alerts/latest`` convenience endpoint and the
+    ``/alerts/test`` demo endpoint that lets the dashboard be exercised
+    end-to-end without camera/drone hardware. Both back the in-app
+    banner (latest) and the "Test alert" button (test) added in the
+    Detection Alerts tab."""
+
+    def test_latest_returns_null_when_log_empty(self, client):
+        notif.clear_notifications()
+        r = client.get("/monitoring/alerts/latest")
+        assert r.status_code == 200
+        assert r.json() == {"alert": None}
+
+    def test_latest_tracks_most_recent(self, client):
+        notif.clear_notifications()
+        notif.add_notification(
+            "pc_camera",
+            [{"label": "fire", "confidence": 0.5, "bbox": [0, 0, 1, 1]}],
+        )
+        first = client.get("/monitoring/alerts/latest").json()["alert"]
+        assert first is not None
+        assert first["source"] == "pc_camera"
+
+        # Second alert — /alerts/latest must update to point at it.
+        notif.add_notification(
+            "webcam",
+            [{"label": "fire", "confidence": 0.6, "bbox": [1, 1, 2, 2]}],
+        )
+        second = client.get("/monitoring/alerts/latest").json()["alert"]
+        assert second is not None
+        assert second["source"] == "webcam"
+        assert second["id"] != first["id"]
+
+    def test_post_test_alert_persists_through_evidence_log(self, client):
+        notif.clear_notifications()
+        before = client.get("/monitoring/alerts/summary").json()
+        assert before["total"] == 0
+
+        r = client.post(
+            "/monitoring/alerts/test",
+            params={"label": "smoke", "confidence": 0.91, "source": "demo"},
+        )
+        assert r.status_code == 200
+        created = r.json()
+        assert created["source"] == "demo"
+        assert created["max_confidence"] == 0.91
+
+        # Lands in summary, list, and latest — all three reading from
+        # the same JSONL evidence log, so they must agree on the count
+        # and the most-recent id.
+        after = client.get("/monitoring/alerts/summary").json()
+        assert after["total"] == 1
+        assert after["by_source"].get("demo") == 1
+
+        listing = client.get("/monitoring/alerts").json()["alerts"]
+        assert len(listing) == 1
+        assert listing[0]["id"] == created["id"]
+        assert listing[0]["detections"][0]["label"] == "smoke"
+
+        latest = client.get("/monitoring/alerts/latest").json()["alert"]
+        assert latest is not None
+        assert latest["id"] == created["id"]
+
+    def test_post_test_alert_collapses_unknown_label_to_fire(self, client):
+        notif.clear_notifications()
+        r = client.post(
+            "/monitoring/alerts/test",
+            params={"label": "rainbow", "confidence": 0.5},
+        )
+        assert r.status_code == 200
+        latest = client.get("/monitoring/alerts/latest").json()["alert"]
+        assert latest["detections"][0]["label"] == "fire"
+
+    def test_post_test_alert_does_not_leak_into_run_history(self, client):
+        """The /alerts/test endpoint goes through the monitoring layer
+        only — it must never write into the prediction audit log."""
+        from src.api.db.database import get_run_history
+
+        notif.clear_notifications()
+        before = len(get_run_history(limit=500))
+        client.post("/monitoring/alerts/test")
+        after = len(get_run_history(limit=500))
+        assert after == before, "demo alert leaked into run_history"
+
+    def test_alerts_latest_does_not_shadow_alert_id_route(self, client):
+        """Ensure ``/alerts/{id}`` still resolves a real id even though
+        the literal slug ``"latest"`` superficially fits the
+        ``{alert_id}`` slot — i.e. confirm route order in the router."""
+        notif.clear_notifications()
+        created = client.post("/monitoring/alerts/test").json()
+        rid = created["id"]
+        r = client.get(f"/monitoring/alerts/{rid}")
+        assert r.status_code == 200
+        assert r.json()["id"] == rid

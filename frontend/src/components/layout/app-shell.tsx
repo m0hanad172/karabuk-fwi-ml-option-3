@@ -16,6 +16,7 @@ import { SystemModel } from "@/components/tabs/system-model";
 import { useT } from "@/lib/i18n-context";
 import { cn } from "@/lib/utils";
 
+import { AlertBanner } from "./alert-banner";
 import { DEFAULT_SECTION, findNavItem, type SectionId } from "./nav-items";
 import { PageHeader } from "./page-header";
 import { SidebarNav } from "./sidebar-nav";
@@ -60,6 +61,13 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-screen w-full">
+      {/* Floating in-app banner — fires when a NEW fire/smoke detection
+          lands in the JSONL evidence log. Visible across every tab so a
+          fresh alert never goes unnoticed regardless of which page the
+          operator happens to be on. Strictly read-only; never touches
+          run_history or the prediction layer. */}
+      <AlertBanner />
+
       {/* Desktop sidebar — permanent column */}
       <div className="hidden lg:flex lg:w-[260px] lg:flex-shrink-0">
         <SidebarNav activeId={active} onSelect={select} />

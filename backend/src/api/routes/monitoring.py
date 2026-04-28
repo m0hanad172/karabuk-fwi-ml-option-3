@@ -168,6 +168,58 @@ async def alerts_summary():
 
 
 @router.get(
+    "/alerts/latest",
+    summary="Most recently raised detection alert (or null)",
+)
+async def alerts_latest():
+    """Return the single most recent alert, or ``{"alert": null}`` if none.
+
+    Routed BEFORE ``/alerts/{alert_id}`` so FastAPI does not try to
+    match ``"latest"`` as an alert id. The dashboard polls this every
+    few seconds to drive the visible in-app notification banner — a
+    cheap GET that lets the UI react immediately to a new detection.
+    """
+    return {"alert": notif.latest_alert()}
+
+
+@router.post(
+    "/alerts/test",
+    summary="Append a synthetic detection alert (demo / smoke-test)",
+)
+async def alerts_test(
+    label: str = Query(
+        "fire",
+        description="Detection label — fire or smoke (anything else collapses to fire).",
+    ),
+    confidence: float = Query(
+        0.78, ge=0.0, le=1.0, description="Synthetic confidence in [0,1]."
+    ),
+    source: str = Query(
+        "demo",
+        description=(
+            "Source tag — defaults to 'demo' so synthetic alerts are easy "
+            "to filter out later. Pass webcam/pc_camera/drone to simulate "
+            "a hardware-raised alert."
+        ),
+    ),
+):
+    """Create a synthetic alert through the real persistence path.
+
+    Useful when no camera / drone hardware is available — the alert
+    lands in the JSONL evidence log and the in-memory ring buffer
+    just like a real YOLO detection, so you can verify the Detection
+    Alerts tab, the dashboard banner, and ``/alerts/summary`` all
+    react correctly. Demo alerts persist across backend restarts; if
+    you want a clean slate, delete them by editing
+    ``backend/data/notifications/alerts.jsonl`` (the file is
+    gitignored runtime state).
+    """
+    return notif.add_demo_alert(
+        label=label, confidence=confidence, source=source
+    )
+
+
+@router.get(
     "/alerts/{alert_id}",
     summary="Fetch a single detection alert by id (with bbox list)",
 )
