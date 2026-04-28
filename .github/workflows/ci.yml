@@ -1,9 +1,10 @@
 # =====================================================================
 # Karabuk FWI - continuous integration
 # =====================================================================
-# Three independent jobs: backend tests, frontend build, docker
-# config-validation. Hardware-dependent paths (cameras, drone,
-# YOLO) are NOT exercised in CI - they require physical devices.
+# Two independent jobs: backend tests + frontend production build.
+# Hardware-dependent paths (cameras, drone, YOLO) are NOT exercised
+# in CI - they require physical devices and live in the official
+# Local Hardware Mode runtime described in README.md.
 # =====================================================================
 
 name: CI
@@ -83,18 +84,8 @@ jobs:
         run: npm run lint || echo "lint warnings ignored - non-blocking"
         continue-on-error: true
 
-  docker-validate:
-    name: Docker compose config
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Validate docker-compose.yml
-        run: docker compose config
-
-      # We do NOT run `docker compose build` in CI - the backend image
-      # depends on torch / ultralytics, which is multi-GB and not
-      # something a free-tier runner should pull on every push.
-      # Local devs and the deployment pipeline build the images.
+  # Docker is intentionally NOT validated in CI: this project ships
+  # Local Hardware Mode as the official runtime (live webcam + Tello
+  # drone are core), and Docker on Windows hosts cannot reach those
+  # devices. See docs/DEPLOYMENT_PLAN.md for the deferred container
+  # roadmap.
