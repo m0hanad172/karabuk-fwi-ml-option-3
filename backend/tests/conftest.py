@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 import sys
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -20,20 +22,56 @@ import pytest
 # Make `src/` importable for every test without duplicating sys.path hacks.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# Some restricted Windows environments deny named-pipe creation when joblib
+# expands sklearn forests across multiple workers. Tests only need correctness,
+# so one worker keeps inference deterministic and avoids that OS permission edge.
+os.environ.setdefault("LOKY_MAX_CPU_COUNT", "1")
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_TEST_TMP_ROOT = _REPO_ROOT / ".tmp" / "pytest-runtime"
+
+
+def _sqlite_writable(root: Path) -> bool:
+    """Return True if SQLite can create and write a tiny DB under root."""
+    probe_dir = root / f"probe-{os.getpid()}-{uuid.uuid4().hex}"
+    probe_db = probe_dir / "probe.db"
+    try:
+        probe_dir.mkdir(parents=True, exist_ok=False)
+        conn = sqlite3.connect(str(probe_db))
+        conn.execute("CREATE TABLE probe (id INTEGER PRIMARY KEY)")
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        return False
+    finally:
+        _best_effort_rmtree(probe_dir)
+
+
+def _resolve_test_tmp_root() -> Path:
+    """Pick a temp root that can support SQLite writes on this machine."""
+    env_override = os.environ.get("KARABUK_TEST_TMP_ROOT")
+    candidates = []
+    if env_override:
+        candidates.append(Path(env_override))
+    candidates.extend([
+        _REPO_ROOT / ".tmp" / "pytest-runtime",
+        Path(tempfile.gettempdir()) / "karabuk-fwi-pytest-runtime",
+    ])
+    for root in candidates:
+        if _sqlite_writable(root):
+            return root
+    raise RuntimeError("Could not find a SQLite-writable pytest temp directory")
 
 
 def _make_test_dir(label: str) -> Path:
     """Create a repo-local temp dir.
 
-    Some Windows environments deny access to the default OS temp tree
-    from sandboxed subprocesses. Keeping test runtime files under the
-    ignored workspace .tmp directory avoids that without touching the
-    operational SQLite DB or detection evidence log.
+    Some Windows environments deny SQLite writes in one temp location but not
+    another. Resolve the root lazily and probe it before tests write any DBs.
     """
-    _TEST_TMP_ROOT.mkdir(parents=True, exist_ok=True)
-    path = _TEST_TMP_ROOT / f"{label}-{os.getpid()}-{uuid.uuid4().hex}"
+    test_tmp_root = _resolve_test_tmp_root()
+    test_tmp_root.mkdir(parents=True, exist_ok=True)
+    path = test_tmp_root / f"{label}-{os.getpid()}-{uuid.uuid4().hex}"
     path.mkdir(parents=True, exist_ok=False)
     return path
 
