@@ -1,17 +1,36 @@
-flowchart TD
-    start["Start / scheduled or manual run"] --> fetch["Fetch weather data"]
-    fetch --> prepare["Prepare features"]
-    prepare --> predict["Run prediction"]
-    predict --> classify["Classify risk"]
-    classify --> store_run["Store result in run_history"]
-    store_run --> show_dashboard["Display dashboard"]
+%% FireWatch — operational workflow
+%% A scheduled risk check decides whether the drone patrol cycle
+%% runs. CCTV detection runs always; drone patrol is risk-triggered.
 
-    monitor_start["Start monitoring"] --> stream["Read camera/video stream"]
-    stream --> detect["Detect fire/smoke"]
-    detect --> decision{"Fire or smoke detected?"}
-    decision -- "No" --> stream
-    decision -- "Yes" --> alert["Create alert"]
-    alert --> store_alert["Store alert in detection_alerts"]
-    store_alert --> review["Operator reviews alert"]
-    review --> read_state["Mark read/unread"]
-    read_state --> show_dashboard
+flowchart TD
+    start["Scheduled Risk Check<br/>09:00 / 11:00 / 15:00<br/>or Manual Check"] --> fetch["Fetch latest weather"]
+    fetch --> features["Build features"]
+    features --> predict["Stage 1 + Stage 2 prediction"]
+    predict --> classify{"Risk class?"}
+
+    classify -- "Low / Moderate" --> store_low["Store run in run_history<br/>system_state.drone_status = STANDBY"]
+    store_low --> cctv_only["CCTV / fixed cameras keep monitoring"]
+    cctv_only --> show["Update dashboard"]
+
+    classify -- "High" --> store_high["Store run in run_history<br/>system_state.drone_status = ACTIVE_CYCLE"]
+    store_high --> open_window["Open Drone Patrol Window<br/>closes at next check<br/>(15:00 high → 17:00 cutoff)"]
+    open_window --> patrol_cycle{{"Every 30 minutes"}}
+
+    patrol_cycle --> launch["Launch short patrol"]
+    launch --> inspect["Inspect priority grid cells<br/>via drone / video stream"]
+    inspect --> detect_drone["Run fire / smoke detection"]
+    detect_drone --> return_base["Return to base"]
+    return_base --> standby["Standby / battery preparation"]
+    standby --> next_slot{"Window still open?"}
+    next_slot -- "Yes" --> patrol_cycle
+    next_slot -- "No (next check or 17:00)" --> show
+
+    cctv_stream["CCTV stream<br/>always-on"] --> detect_cctv["Run fire / smoke detection"]
+    detect_cctv --> alert_or_continue{"Detection?"}
+    detect_drone --> alert_or_continue
+    alert_or_continue -- "No" --> show
+    alert_or_continue -- "Yes" --> save_alert["Save row in detection_alerts<br/>save snapshot JPG"]
+    save_alert --> banner["Emit dashboard banner"]
+    banner --> show
+
+    show --> review["Operator reviews<br/>marks read / unread"]

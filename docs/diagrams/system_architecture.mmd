@@ -1,17 +1,33 @@
+%% FireWatch — system architecture
+%% Prediction-driven monitoring: scheduled risk checks decide whether
+%% the drone patrol cycle runs. CCTV stays always-on regardless.
+
 flowchart LR
     weather["Weather / Historical Data"] --> features["Feature Engineering"]
-    features --> prediction["ML Wildfire Risk Prediction"]
-    prediction --> decision["High-Risk Decision Logic"]
-    decision --> api["FastAPI Backend"]
-    api --> db["SQLite Database"]
-    api --> dashboard["React Dashboard"]
 
-    local_stream["Local Camera / Video Stream"] --> detection["Fire/Smoke Detection"]
-    future_drone["Future Drone Camera Stream"] -. configurable input .-> detection
+    sched["Scheduled Risk Checks<br/>09:00 / 11:00 / 15:00<br/>Europe/Istanbul"] --> features
+    manual["Manual Risk Check<br/>operator action"] --> features
+
+    features --> prediction["Stage 1 + Stage 2<br/>Wildfire Risk Prediction"]
+    prediction --> decision["Risk Decision<br/>Low / Moderate / High"]
+
+    decision -->|"High Risk"| window["Drone Patrol Window<br/>open until next check<br/>(or 17:00 cutoff)"]
+    decision -->|"Low / Moderate"| persist1["Store run + state"]
+
+    window --> cycle["30-min Drone Patrol Cycle<br/>launch → inspect → return → standby"]
+    cycle --> grid["Priority Grid Cells"]
+    grid --> drone_stream["Drone / Video Stream"]
+    drone_stream --> detection
+
+    cctv["CCTV / Fixed Cameras<br/>always-on"] --> detection["Fire / Smoke Detection<br/>(YOLOv8)"]
     detection --> alerts["Alert Generation"]
-    alerts --> api
-    alerts --> db
 
+    alerts --> api["FastAPI Backend"]
+    persist1 --> api
+    decision --> api
+
+    api --> db[("SQLite<br/>run_history<br/>system_state<br/>detection_alerts")]
+    api --> dashboard["React Dashboard"]
     db --> dashboard
     dashboard --> operator["Operator"]
 
@@ -19,6 +35,8 @@ flowchart LR
         features
         prediction
         decision
+        window
+        cycle
         detection
         alerts
         api

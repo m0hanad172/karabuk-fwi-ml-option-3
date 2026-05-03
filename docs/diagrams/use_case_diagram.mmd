@@ -1,31 +1,41 @@
+%% FireWatch — actors and use cases.
+%% Mermaid does not have native UML use-case shapes; we approximate
+%% with rounded boxes for use cases and rectangles for actors.
+
 flowchart LR
-    operator["Operator"]
-    admin["Admin"]
-    weather["Weather/Data Source"]
-    camera["Camera/Future Drone Stream"]
+    operator(["Operator"])
+    admin(["Admin"])
+    weather(["Weather / Data Source"])
+    cctv(["CCTV / Fixed Camera"])
+    drone(["Future Drone Stream"])
 
     subgraph system["FireWatch System"]
-        view_dashboard["View dashboard"]
-        run_prediction["Run/view risk prediction"]
-        view_history["View prediction history"]
-        monitor_stream["Monitor camera/video stream"]
-        receive_alerts["Receive fire/smoke alerts"]
-        review_alerts["Review alerts"]
-        configure_stream["Configure stream source"]
-        check_status["Check system status"]
+        UC1(["View dashboard"])
+        UC2(["View Scheduled Risk Checks<br/>(09:00 / 11:00 / 15:00)"])
+        UC3(["Run Manual Risk Check"])
+        UC4(["Review Drone Patrol Window<br/>+ 30-min Patrol Cycle"])
+        UC5(["Monitor CCTV stream"])
+        UC6(["Receive fire / smoke alert"])
+        UC7(["Review alert history<br/>(mark read / unread)"])
+        UC8(["Configure stream source"])
+        UC9(["View system status<br/>(health, scheduler, DB)"])
     end
 
-    operator --> view_dashboard
-    operator --> run_prediction
-    operator --> view_history
-    operator --> monitor_stream
-    operator --> receive_alerts
-    operator --> review_alerts
-    operator --> check_status
+    operator --> UC1
+    operator --> UC2
+    operator --> UC3
+    operator --> UC4
+    operator --> UC5
+    operator --> UC6
+    operator --> UC7
+    operator --> UC9
 
-    admin --> configure_stream
-    admin --> check_status
+    admin --> UC8
+    admin --> UC9
 
-    weather --> run_prediction
-    camera --> monitor_stream
-    monitor_stream --> receive_alerts
+    weather --> UC2
+    weather --> UC3
+    cctv --> UC5
+    drone --> UC4
+    UC4 --> UC6
+    UC5 --> UC6

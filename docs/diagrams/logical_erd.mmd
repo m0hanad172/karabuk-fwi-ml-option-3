@@ -1,0 +1,87 @@
+%% FireWatch — LOGICAL (future) ERD
+%% NOT the current SQLite schema. This documents the operational
+%% design target so the project can evolve from a single-DB
+%% prototype into a fuller monitoring system. The current real
+%% schema lives in sqlite_erd.mmd and database.py — DO NOT
+%% derive any code from this diagram without explicit approval.
+
+erDiagram
+    RISK_CHECKS {
+        TEXT check_id PK
+        TEXT slot           "scheduled | manual"
+        TEXT scheduled_hour "09 | 11 | 15 | null for manual"
+        TEXT timestamp_iso
+        TEXT target_date
+        REAL predicted_fwi
+        REAL high_risk_probability
+        INTEGER high_risk_flag
+        TEXT classification "low | moderate | high"
+        TEXT decision_reason
+        TEXT thresholds_json
+    }
+
+    PATROL_WINDOWS {
+        TEXT window_id PK
+        TEXT triggering_check_id FK
+        TEXT opens_at
+        TEXT closes_at
+        INTEGER cutoff_applied "1 if 17:00 cutoff was used"
+        TEXT status "open | closed"
+    }
+
+    DRONE_MISSIONS {
+        TEXT mission_id PK
+        TEXT window_id FK
+        TEXT slot_iso         "30-min slot start"
+        TEXT phase            "launch | inspect | return | standby"
+        TEXT status           "planned | flying | landed | aborted"
+        TEXT notes
+    }
+
+    GRID_CELLS {
+        TEXT cell_id PK
+        REAL latitude
+        REAL longitude
+        INTEGER priority
+        TEXT label
+    }
+
+    MISSION_GRID_CELLS {
+        TEXT mission_id FK
+        TEXT cell_id FK
+    }
+
+    STREAM_SOURCES {
+        TEXT source_id PK
+        TEXT kind           "cctv | pc_camera | webcam | drone"
+        TEXT label
+        INTEGER cv_index    "OpenCV index when kind != drone"
+        TEXT url            "RTSP / WebRTC URL when kind = drone"
+        INTEGER enabled
+    }
+
+    DETECTION_ALERTS {
+        TEXT alert_id PK
+        TEXT source_id FK
+        TEXT mission_id FK  "nullable - drone missions only"
+        TEXT label          "fire | smoke"
+        REAL confidence
+        TEXT timestamp_iso
+        TEXT snapshot_path
+        INTEGER is_read
+        TEXT read_at
+        TEXT detections_json
+    }
+
+    SYSTEM_STATE {
+        TEXT key PK
+        TEXT value_json
+        TEXT updated_at
+    }
+
+    RISK_CHECKS    ||--o| PATROL_WINDOWS     : "high-risk opens window"
+    PATROL_WINDOWS ||--o{ DRONE_MISSIONS     : "30-min slots inside window"
+    DRONE_MISSIONS ||--o{ MISSION_GRID_CELLS : "covers"
+    GRID_CELLS     ||--o{ MISSION_GRID_CELLS : "covered by"
+    STREAM_SOURCES ||--o{ DETECTION_ALERTS   : "raises"
+    DRONE_MISSIONS ||--o{ DETECTION_ALERTS   : "scoped to mission (when drone)"
