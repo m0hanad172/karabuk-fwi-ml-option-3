@@ -29,6 +29,11 @@ def _db_path() -> Path:
     return DEFAULT_DB_PATH
 
 
+def get_database_path() -> Path:
+    """Return the SQLite path currently used by backend persistence."""
+    return _db_path()
+
+
 _CREATE_TABLES = """
 CREATE TABLE IF NOT EXISTS run_history (
     run_id TEXT PRIMARY KEY,

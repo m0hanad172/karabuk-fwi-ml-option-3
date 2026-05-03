@@ -86,6 +86,77 @@ class TestSystemEndpoints:
         assert "CORS_ORIGINS" not in data
 
 
+class TestSchedulerPersistence:
+    def test_scheduler_configuration(self):
+        from configs.settings import SCHEDULED_RUN_HOURS
+        from src.api.time_utils import ISTANBUL_TZ
+
+        assert SCHEDULED_RUN_HOURS == [9, 11, 15]
+        assert getattr(ISTANBUL_TZ, "key", None) == "Europe/Istanbul"
+
+    def test_start_scheduler_registers_all_slots(self):
+        from src.api.services import scheduler
+
+        scheduler.stop_scheduler()
+        try:
+            scheduler.start_scheduler()
+            status = scheduler.get_scheduler_status()
+            assert status["running"] is True
+            assert len(status["jobs"]) == 3
+            assert {job["id"] for job in status["jobs"]} == {
+                "scheduled_early_morning_run",
+                "scheduled_morning_run",
+                "scheduled_afternoon_run",
+            }
+        finally:
+            scheduler.stop_scheduler()
+
+    def test_scheduled_run_persists_run_history(self, monkeypatch):
+        from src.api.db.database import get_connection, get_run_by_id
+        from src.api.services import risk_service, scheduler
+
+        run_id = "sched_direct_001"
+
+        def fake_run_risk_check(
+            target_date=None,
+            run_type="manual",
+            allow_drone_trigger=None,
+        ):
+            return _make_run(
+                run_id=run_id,
+                run_type=run_type,
+                run_timestamp="2026-05-03T09:00:00+03:00",
+                target_date=target_date or "2026-05-03",
+                predicted_fwi=24.5,
+                high_risk_probability=0.12,
+                high_risk_flag=0,
+                drone_state={"active_alert_window": False},
+            )
+
+        monkeypatch.setattr(risk_service, "run_risk_check", fake_run_risk_check)
+        monkeypatch.setattr(scheduler, "execute_risk_check", risk_service.execute_risk_check)
+
+        result = scheduler._scheduled_run(hour=9, slot="early_morning")
+        assert result["run_id"] == run_id
+        assert result["run_type"] == "scheduled"
+
+        row = get_run_by_id(run_id)
+        assert row is not None
+        assert row["run_type"] == "scheduled"
+
+        conn = get_connection()
+        try:
+            persisted = conn.execute(
+                "SELECT run_type FROM run_history WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        assert persisted is not None
+        assert persisted["run_type"] == "scheduled"
+
+
 class TestHistoryEndpoints:
     def test_run_history_empty(self, client):
         r = client.get("/history/runs")
