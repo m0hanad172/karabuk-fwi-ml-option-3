@@ -165,10 +165,10 @@ function AlertBanner({
       >
         <AlertTriangle className="h-5 w-5" style={{ color: "var(--warning)" }} />
         <div className="text-sm">
-          <p className="font-medium">No operational predictions yet</p>
+          <p className="font-medium">No risk check has run yet</p>
           <p className="text-muted-foreground">
-            Trigger a manual run from Risk Decision, or wait for the next
-            scheduled run (11:00 / 15:00 Istanbul).
+            Run a Manual Check from the Risk Decision tab, or wait for the
+            next scheduled check (see the Scheduler card).
           </p>
         </div>
       </div>

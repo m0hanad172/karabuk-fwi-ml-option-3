@@ -88,14 +88,14 @@ export function MonitoringDrone() {
       <div className="ent-card p-5">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
           <div>
-            <p className="ent-eyebrow">Operational Policy</p>
+            <p className="ent-eyebrow">High Risk Trigger</p>
             <h3 className="font-display text-lg font-semibold leading-none mt-1 flex items-center gap-2">
               <Plane className="h-4 w-4" style={{ color: "var(--primary)" }} />
-              Drone Launch Policy
+              Drone Patrol Window
             </h3>
             <p className="text-xs text-muted-foreground mt-1">
-              Read-only view of the Stacked v3 risk state — never written by
-              the detection layer.
+              Opens automatically on a High Risk classification. 30-min
+              patrol cycle while open.
             </p>
           </div>
           {p && (

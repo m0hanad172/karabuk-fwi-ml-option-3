@@ -159,9 +159,9 @@ export function DetectionAlerts() {
           style={{ background: "var(--primary)" }}
         />
         <span>
-          <span className="font-semibold">Durable evidence log.</span> Every
-          fire detection ever raised by the drone, webcam and PC camera is
-          saved in SQLite with snapshot evidence. For live feeds, see the{" "}
+          <span className="font-semibold">Alert log.</span> Every fire /
+          smoke detection from CCTV, the camera feeds, and the drone
+          stream — saved with a snapshot. Live feeds: see the{" "}
           <span className="font-medium">Monitoring</span> tab.
         </span>
       </div>
@@ -179,10 +179,9 @@ export function DetectionAlerts() {
               Detection Alerts
             </h3>
             <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
-              Durable SQLite log of every fire detection raised by the
-              drone, webcam and PC camera feeds. Strictly separate from the
-              prediction pipeline — alerts here never influence the FWI
-              decision or the drone launch policy.
+              Every fire / smoke detection from CCTV, webcam, PC camera,
+              and the drone stream lands here. Separate from the risk
+              prediction pipeline.
             </p>
           </div>
           <div className="flex items-center gap-2">
