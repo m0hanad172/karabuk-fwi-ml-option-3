@@ -1,0 +1,26 @@
+flowchart LR
+    weather["Weather / Historical Data"] --> features["Feature Engineering"]
+    features --> prediction["ML Wildfire Risk Prediction"]
+    prediction --> decision["High-Risk Decision Logic"]
+    decision --> api["FastAPI Backend"]
+    api --> db["SQLite Database"]
+    api --> dashboard["React Dashboard"]
+
+    local_stream["Local Camera / Video Stream"] --> detection["Fire/Smoke Detection"]
+    future_drone["Future Drone Camera Stream"] -. configurable input .-> detection
+    detection --> alerts["Alert Generation"]
+    alerts --> api
+    alerts --> db
+
+    db --> dashboard
+    dashboard --> operator["Operator"]
+
+    subgraph backend["Backend Runtime"]
+        features
+        prediction
+        decision
+        detection
+        alerts
+        api
+        db
+    end

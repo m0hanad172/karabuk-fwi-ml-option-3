@@ -1,0 +1,46 @@
+erDiagram
+    %% The active SQLite database has no enforced foreign keys.
+    %% Relationships shown here are logical/operational for documentation.
+
+    RUN_HISTORY {
+        TEXT run_id PK
+        TEXT run_type
+        TEXT run_timestamp
+        TEXT target_date
+        REAL predicted_fwi
+        REAL high_risk_probability
+        INTEGER high_risk_flag
+        TEXT decision_reason
+        INTEGER drone_triggered
+        TEXT raw_inputs_json
+        TEXT feature_values_json
+        TEXT validation_json
+        TEXT thresholds_json
+    }
+
+    SYSTEM_STATE {
+        TEXT key PK
+        TEXT value_json
+        TEXT updated_at
+    }
+
+    DETECTION_ALERTS {
+        TEXT alert_id PK
+        TEXT timestamp_iso
+        REAL timestamp_epoch
+        TEXT label
+        REAL confidence
+        TEXT source
+        TEXT camera_id
+        TEXT severity
+        TEXT message
+        TEXT snapshot_path
+        INTEGER is_read
+        TEXT read_at
+        INTEGER detection_count
+        TEXT detections_json
+        TEXT raw_payload_json
+    }
+
+    RUN_HISTORY ||..o{ SYSTEM_STATE : "updates latest policy state"
+    DETECTION_ALERTS }o..|| SYSTEM_STATE : "shown with monitoring state"

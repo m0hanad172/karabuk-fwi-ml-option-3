@@ -1,0 +1,31 @@
+flowchart LR
+    operator["Operator"]
+    admin["Admin"]
+    weather["Weather/Data Source"]
+    camera["Camera/Future Drone Stream"]
+
+    subgraph system["FireWatch System"]
+        view_dashboard["View dashboard"]
+        run_prediction["Run/view risk prediction"]
+        view_history["View prediction history"]
+        monitor_stream["Monitor camera/video stream"]
+        receive_alerts["Receive fire/smoke alerts"]
+        review_alerts["Review alerts"]
+        configure_stream["Configure stream source"]
+        check_status["Check system status"]
+    end
+
+    operator --> view_dashboard
+    operator --> run_prediction
+    operator --> view_history
+    operator --> monitor_stream
+    operator --> receive_alerts
+    operator --> review_alerts
+    operator --> check_status
+
+    admin --> configure_stream
+    admin --> check_status
+
+    weather --> run_prediction
+    camera --> monitor_stream
+    monitor_stream --> receive_alerts

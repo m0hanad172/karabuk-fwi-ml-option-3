@@ -1,0 +1,17 @@
+flowchart TD
+    start["Start / scheduled or manual run"] --> fetch["Fetch weather data"]
+    fetch --> prepare["Prepare features"]
+    prepare --> predict["Run prediction"]
+    predict --> classify["Classify risk"]
+    classify --> store_run["Store result in run_history"]
+    store_run --> show_dashboard["Display dashboard"]
+
+    monitor_start["Start monitoring"] --> stream["Read camera/video stream"]
+    stream --> detect["Detect fire/smoke"]
+    detect --> decision{"Fire or smoke detected?"}
+    decision -- "No" --> stream
+    decision -- "Yes" --> alert["Create alert"]
+    alert --> store_alert["Store alert in detection_alerts"]
+    store_alert --> review["Operator reviews alert"]
+    review --> read_state["Mark read/unread"]
+    read_state --> show_dashboard
