@@ -58,6 +58,21 @@ Frontend URL:
 http://localhost:3000
 ```
 
+## Scheduled Risk Checks
+
+The operational design runs three scheduled risk checks per day in
+**Europe/Istanbul** time:
+
+- 09:00
+- 11:00
+- 15:00
+
+The current code runs the 11:00 and 15:00 slots
+(`backend/configs/settings.py::SCHEDULED_RUN_HOURS`). Adding 09:00 is
+a one-line settings change. See
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full operational logic
+(patrol windows, patrol cycle, CCTV vs drone).
+
 ## Environment Notes
 
 Backend optional environment file:

@@ -63,15 +63,116 @@ separate source of truth.
 6. Display alerts in the dashboard.
 7. Allow the operator to mark alerts as read/unread.
 
-## Drone-Ready Design
+## Operational Logic (Final Design)
 
-The system is designed as a drone-ready monitoring platform. In the current
-prototype, the fire/smoke detection module operates using a local camera or
-video stream. Once a drone is available, its camera stream can be configured as
-an input source without changing the core detection and alerting pipeline.
+FireWatch is a **prediction-driven monitoring system**, not two
+independent modules. Risk prediction decides what monitoring should
+happen, and monitoring records evidence in the database.
 
-This keeps the current prototype honest while still showing how the system can
-be extended to drone hardware.
+### Scheduled risk checks
+
+Three scheduled checks per day, all in **Europe/Istanbul**:
+
+| Slot | Time | Purpose |
+|---|---|---|
+| Morning | 09:00 | Early-day risk read — sets the tone for the morning. |
+| Midday | 11:00 | Operational check — high-risk hours start. |
+| Afternoon | 15:00 | Late-day check — most fires occur in this window. |
+
+Each check follows the same flow: fetch latest weather → build features
+→ run Stage 1 + Stage 2 → classify risk → write a row to
+`run_history` → update `system_state` → render in the dashboard.
+
+### Manual risk check
+
+An operator can run a manual check at any time from the dashboard
+(Risk Decision tab → **Run Manual Check**) or via
+`POST /risk/check`. The `run_type` is recorded as `manual`. If the
+manual check returns **High Risk** and the operator passes
+`allow_drone_trigger=true`, the same patrol-window rules apply as a
+scheduled check.
+
+### Risk classes and actions
+
+| Risk class | Drone patrol | CCTV / fixed cameras | Persisted |
+|---|---|---|---|
+| Low / Moderate | No automatic patrol | Always-on | `run_history` row |
+| High | Open Drone Patrol Window | Always-on | `run_history` row + `system_state.latest_drone_state` |
+
+### Drone Patrol Window
+
+A High Risk classification opens a **patrol window** that runs from
+the triggering check until the next scheduled check. Special case:
+a 15:00 high-risk check ends its window at **17:00**, so patrol
+never runs overnight.
+
+| Trigger | Window opens at | Window closes at |
+|---|---|---|
+| 09:00 high risk | 09:00 | 11:00 |
+| 11:00 high risk | 11:00 | 15:00 |
+| 15:00 high risk | 15:00 | 17:00 (operational cutoff) |
+| Manual high risk | now | next scheduled check or 17:00, whichever sooner |
+
+### Drone Patrol Cycle (within an open window)
+
+The drone does not fly continuously. While the window is open,
+the system runs a **30-minute patrol cycle**:
+
+1. **Launch** — short patrol over selected priority grid cells.
+2. **Inspect** — fire/smoke detection on the drone/video stream.
+3. **Return** — back to base.
+4. **Standby / battery preparation / battery swap** — until the next
+   30-minute slot.
+
+Example for a 09:00 high-risk classification:
+
+```
+09:00  Risk check returns High Risk → patrol window opens.
+09:00  Launch patrol  →  09:10–09:15 return / land.
+09:15  Standby / battery preparation.
+09:30  Launch patrol.
+10:00  Launch patrol.
+10:30  Launch patrol.
+11:00  New scheduled risk check. Re-evaluate.
+```
+
+### CCTV vs drone roles
+
+| Role | What it is | When it runs |
+|---|---|---|
+| **CCTV / fixed cameras** | Always-on local cameras at fixed monitoring points. | 24/7, independent of the risk classification. |
+| **Drone patrol** | Risk-triggered mobile monitoring of priority grid cells. | Only inside an open patrol window. |
+
+Both share the same fire/smoke detection pipeline; both write into
+`detection_alerts`. The dashboard treats them as different alert
+sources (`source=webcam` / `source=pc_camera` / `source=drone`).
+
+### Drone-ready (not drone-based)
+
+The current prototype reads from a **local camera or video stream**.
+A real drone stream can be plugged in later as another input source
+without changing the detection pipeline, the API contracts, or the
+database schema.
+
+## Limitations and Future Improvements
+
+Honest gap between the **operational design above** and the
+**current implementation**:
+
+| Operational design | Current implementation |
+|---|---|
+| 3 scheduled checks at 09:00, 11:00, 15:00 | Code currently runs 11:00 and 15:00 (`SCHEDULED_RUN_HOURS = [11, 15]`). Adding 09:00 is a one-line settings change. |
+| Automated 30-minute patrol cycle | `DRONE_INTERVAL_MINUTES = 30` is defined and `compute_drone_state` returns `next_launch_time`. The full launch / inspect / return / standby orchestration is not yet automated because real drone hardware is not connected. |
+| 17:00 cutoff for the 15:00 high-risk window | Not yet enforced in code. |
+| Priority grid cells | Modelled in the logical ERD (`docs/diagrams/logical_erd.mmd`), not yet in the SQLite schema. |
+| Manual high-risk check triggers patrol | The `allow_drone_trigger` flag is wired through the API; default is `False` so the operator must opt in. |
+
+Additional limitations:
+
+- Drone hardware is not currently connected.
+- Current detection input is a local camera/video stream.
+- SQLite is suitable for prototype/demo use; production deployment
+  should consider PostgreSQL.
 
 ## Database Role
 
@@ -94,17 +195,13 @@ prediction and detection write paths remain separate.
 - Practical API coverage for collaborators.
 - Drone-ready wording and design without overstating hardware status.
 
-## Limitations and Future Improvements
+## Diagrams
 
-- Drone hardware is not currently connected.
-- Current detection input is local camera/video stream.
-- SQLite is suitable for prototype/demo use, but a larger deployment should
-  consider PostgreSQL or another managed database.
-- Frontend lint currently reports existing React hook issues.
-- Test execution depends on local filesystem permissions for temporary SQLite
-  files.
-- Future work can improve model validation, add production deployment docs,
-  improve alert review workflows, and add more visual QA screenshots.
+- [`diagrams/system_architecture.mmd`](./diagrams/system_architecture.mmd) — six-layer system view.
+- [`diagrams/workflow_diagram.mmd`](./diagrams/workflow_diagram.mmd) — scheduled check + patrol-window flow.
+- [`diagrams/use_case_diagram.mmd`](./diagrams/use_case_diagram.mmd) — actors and use cases.
+- [`diagrams/sqlite_erd.mmd`](./diagrams/sqlite_erd.mmd) — current real schema.
+- [`diagrams/logical_erd.mmd`](./diagrams/logical_erd.mmd) — future operational schema (design only).
 
 ## Risky Areas
 

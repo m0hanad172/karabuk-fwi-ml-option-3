@@ -83,16 +83,56 @@ Discuss:
 - Dashboard usability.
 - Strengths and limitations.
 
-### 9. Conclusion and Future Work
+### 9. Limitations
+
+Be specific and honest. Suggested points:
+
+- Drone hardware is not connected — the prototype is **drone-ready**
+  using local camera/video input.
+- The current scheduler runs the 11:00 and 15:00 risk checks;
+  09:00 is in the operational design but not yet in
+  `SCHEDULED_RUN_HOURS`.
+- The 30-minute Drone Patrol Cycle is documented as the operational
+  design and partially modelled (`DRONE_INTERVAL_MINUTES`,
+  `compute_drone_state`), but the autonomous launch / inspect /
+  return / standby loop is not yet implemented.
+- Priority grid cells are modelled in the logical ERD only;
+  they are not in the SQLite schema.
+- SQLite is fine for a single-operator prototype; production-scale
+  multi-user monitoring would use PostgreSQL or similar.
+- Frontend lint reports a small number of pre-existing React Hooks
+  warnings; they do not affect runtime behaviour.
+
+### 10. Conclusion and Future Work
 
 Summarize what FireWatch achieves. Future work can include:
 
 - Connecting real drone hardware.
+- Wiring the 09:00 scheduled check.
+- Implementing the autonomous Drone Patrol Cycle.
+- Adding the future operational tables (`risk_checks`,
+  `patrol_windows`, `drone_missions`, `grid_cells`,
+  `stream_sources`).
 - Production database deployment.
 - More model validation.
 - Improved alert triage.
 - Mobile notifications.
 - More field testing.
+
+### 11. References
+
+Cite the academic and technical sources used. Include any web
+references for FWI definitions, weather APIs, YOLO / Ultralytics
+docs, FastAPI / SQLite docs, etc.
+
+### 12. Appendix
+
+Useful additions:
+
+- API reference — `docs/API_REFERENCE.md`.
+- SQLite schema summary — `docs/database/sqlite_schema_summary.md`.
+- Diagram source files — `docs/diagrams/*.mmd`.
+- Smoke-check output — `python backend/scripts/smoke_check.py`.
 
 ## Required Screenshots
 

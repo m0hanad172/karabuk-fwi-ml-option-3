@@ -127,8 +127,26 @@ PRAGMA table_info(detection_alerts);
 PRAGMA table_info(system_state);
 ```
 
+## Future / Logical Schema
+
+The final operational design adds tables to support the patrol-window
+and grid-cell features. None of these are in the current SQLite
+schema yet; they are documented in the logical ERD as a design
+target only.
+
+| Future table | Purpose |
+|---|---|
+| `risk_checks` | Normalised view of every scheduled / manual check (timestamp, slot, classification). |
+| `patrol_windows` | One row per opened High Risk window; carries `opens_at`, `closes_at`, source check. |
+| `drone_missions` | One row per 30-minute patrol slot inside a window. |
+| `grid_cells` | Priority cells the drone can be sent to. |
+| `stream_sources` | Configurable input sources (CCTV / PC camera / future drone). |
+
+See [`diagrams/logical_erd.mmd`](./diagrams/logical_erd.mmd).
+
 ## Related Files
 
 - [SQLite schema summary](./database/sqlite_schema_summary.md)
-- [SQLite ERD](./diagrams/sqlite_erd.mmd)
+- [Current SQLite ERD](./diagrams/sqlite_erd.mmd)
+- [Logical (future) ERD](./diagrams/logical_erd.mmd)
 - Backend database code: `backend/src/api/db/database.py`

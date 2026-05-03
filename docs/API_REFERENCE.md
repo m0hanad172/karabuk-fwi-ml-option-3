@@ -24,7 +24,7 @@ http://localhost:8000/docs
 |---|---|---|
 | GET | `/system/health` | Health status for models and database |
 | GET | `/system/model` | Model names, feature counts, thresholds, and metrics |
-| GET | `/system/scheduler` | Scheduler state and next run information |
+| GET | `/system/scheduler` | Scheduler state and next run information (current slots: 11:00 and 15:00; design adds 09:00) |
 | GET | `/system/config` | Public runtime flags for the frontend |
 
 Example:
@@ -104,8 +104,13 @@ path.
 |---|---|---|
 | GET | `/drone/state` | Latest drone-ready policy state from risk checks |
 
-This endpoint reports system state. The current prototype does not require
-drone hardware to be connected.
+The response carries `active_alert_window` (whether a High Risk
+patrol window is open), `drone_status`
+(`ACTIVE_CYCLE` / `STANDBY`), `drone_interval_minutes` (30 when
+active), `next_launch_time`, and a human-readable `reason`. The
+current prototype does not require real drone hardware to be
+connected — see the operational logic in
+[`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ## Monitoring and Detection
 

@@ -14,7 +14,14 @@ an input source without changing the core detection and alerting pipeline.
 
 - Wildfire risk prediction from weather and FWI-related inputs.
 - Two-stage ML flow: FWI regression, high-risk probability, and decision logic.
-- Fire/smoke detection using a YOLO model and local camera/video input.
+- Three scheduled risk checks per day (09:00, 11:00, 15:00 Europe/Istanbul) —
+  current code runs the 11:00 and 15:00 slots (see
+  [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full
+  operational design).
+- Manual risk check at any time from the dashboard or `POST /risk/check`.
+- Fire/smoke detection (YOLOv8) on CCTV / local camera / future drone input.
+- High-Risk Drone Patrol Window with a 30-minute Patrol Cycle (operational
+  design; full automation pending real drone hardware).
 - FastAPI backend with health, prediction, history, monitoring, and alert APIs.
 - React/TypeScript dashboard for prediction results, run history, analytics,
   monitoring, and detection alerts.
@@ -174,3 +181,16 @@ FireWatch is a working academic prototype, not a production emergency response
 system. Its strongest current value is showing a complete software pipeline:
 weather/FWI risk prediction, detection input handling, alerts, persistence,
 dashboard visualization, and a clear path for future drone camera integration.
+
+## Documentation map
+
+| File | What you'll find |
+|---|---|
+| [`docs/README.md`](./docs/README.md) | Documentation index. Start here. |
+| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Architecture + final operational logic (3 checks, patrol window, patrol cycle). |
+| [`docs/INSTALLATION.md`](./docs/INSTALLATION.md) | Setup commands. |
+| [`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md) | Endpoint catalogue. |
+| [`docs/DATABASE.md`](./docs/DATABASE.md) | SQLite tables + sample queries. |
+| [`docs/REPORT_GUIDE.md`](./docs/REPORT_GUIDE.md) | Final-report scaffolding. |
+| [`docs/CHANGELOG.md`](./docs/CHANGELOG.md) | Project history in plain English. |
+| [`docs/diagrams/`](./docs/diagrams/) | Mermaid diagrams (architecture, workflow, ERDs, use cases). |
