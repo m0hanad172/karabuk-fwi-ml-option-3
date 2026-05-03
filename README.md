@@ -1,672 +1,251 @@
-# Karabük FWI Wildfire Risk Prediction — Stacked v3
+# FireWatch — Karabük FWI Wildfire Risk Prediction
 
 A two-stage machine-learning system that predicts the **Fire Weather
-Index (FWI)** for the Karabük region (Turkey) and decides, twice a day,
-whether the next operational day is a high-risk fire day.
+Index (FWI)** for the Karabük region in Turkey and decides, twice a
+day, whether tomorrow is a high-risk fire day. It also runs YOLOv8
+fire / smoke detection on live camera and Tello-drone feeds.
 
-The repository contains:
-
-- a **FastAPI** backend with SQLite-backed run history and an
-  APScheduler that fires two daily operational runs (11:00 / 15:00
-  Europe/Istanbul);
-- a **Next.js 16 + React 19** dashboard with eight tabs;
-- a fully reproducible training pipeline (HistGradientBoosting +
-  RandomForest, stacked) with all trained artefacts checked into the
-  repo;
-- an isolated **monitoring layer** running YOLOv8 fire detection on
-  webcam / PC-camera / Tello drone feeds.
-
-> All operational timestamps are **Europe/Istanbul** (TRT, +03:00).
+The official runtime is **Local Hardware Mode**: the backend runs
+directly on the host so OpenCV / DSHOW can reach the live USB
+webcam and the drone. There is no Docker path in the active
+workflow — see [`docs/DEPLOYMENT_PLAN.md`](./docs/DEPLOYMENT_PLAN.md)
+for the deferred container roadmap.
 
 ---
 
-## Table of contents
-
-- [System workflow](#system-workflow)
-- [Project structure](#project-structure)
-- [Requirements](#requirements)
-- [Collaborator quick start](#collaborator-quick-start)
-- [Backend setup](#backend-setup)
-- [Frontend setup](#frontend-setup)
-- [Database](#database)
-- [Model files](#model-files)
-- [Environment variables](#environment-variables)
-- [Tests](#tests)
-- [Runtime data and persistence](#runtime-data-and-persistence)
-- [Docker / deployment](#docker--deployment)
-- [Common errors and fixes](#common-errors-and-fixes)
-- [Documentation index](#documentation-index)
-
----
-
-## System workflow
+## What's in the box
 
 ```
-                Open-Meteo + soil-moisture APIs
-                              │
-                              ▼
-              ┌────────── Feature engineering ──────────┐
-              │  backend/src/features/build_features.py │
-              │  → 34 engineered features (Group A/B/C) │
-              └─────────────────────┬────────────────────┘
-                                    ▼
-                     Stage 1 — HistGradientBoostingRegressor
-                          (backend/models/stage1/*.joblib)
-                                    │  predicted_fwi
-                                    ▼
-                     Stage 2 — RandomForestClassifier
-                          (backend/models/stage2/*.joblib)
-                          inputs: predicted_fwi + rh + ws + fuel_drying_rate
-                                    │  high_risk_probability
-                                    ▼
-                     Stacked decision rule
-                     (backend/src/models/decision.py)
-                                    │
-                                    ▼
-              ┌────────────────────────────────────────────┐
-              │  high_risk_flag, decision_reason,          │
-              │  drone launch policy, run_history row      │
-              └────────────────────────────────────────────┘
-                                    │
-                                    ▼
-                        Next.js dashboard (frontend/)
-```
-
-The detection layer (camera + drone + YOLOv8) is **strictly separate**
-from this prediction pipeline — it never writes `predicted_fwi` or
-`high_risk_flag`.
-
----
-
-## Project structure
-
-```
-project-root/
-├── backend/                 FastAPI + ML + monitoring (Python)
-│   ├── src/                 Application code, imported as `src.*`
-│   │   ├── api/             FastAPI app, routes, services, DB layer
-│   │   ├── data/            Open-Meteo / soil-moisture fetchers
-│   │   ├── features/        Feature engineering + schema validators
-│   │   ├── models/          Stacked decision rule + Stage 1/2 trainers
-│   │   ├── inference/       StackedPredictor (production inference)
-│   │   ├── monitoring/      Cameras, drone, YOLO detector, notifications
-│   │   ├── pipeline/        Training pipeline, live inference, drone logic
-│   │   └── evaluation/      Walk-forward + metrics
-│   ├── configs/             paths.py, settings.py — imported as `configs.*`
-│   ├── scripts/             Entry points (serve, train, migrations)
-│   ├── tests/               Pytest suite (83 tests)
-│   ├── models/              Trained artefacts (~8 MB total, all committed)
-│   │   ├── stage1/          HistGradientBoosting regressor
-│   │   ├── stage2/          RandomForest stacked classifier
-│   │   ├── metadata/        Per-stage metadata JSON + comparison report
-│   │   └── fire_detection/  YOLOv8 weights for monitoring layer
-│   ├── data/                Tracked datasets + runtime state
-│   │   ├── processed/       Engineered training set
-│   │   ├── oof/             Walk-forward OOF predictions
-│   │   └── notifications/   Detection evidence (legacy samples kept as demo)
-│   ├── outputs/             Runtime SQLite DB (auto-created, gitignored)
-│   ├── requirements.txt     Python dependencies (sklearn pinned to 1.6.1)
-│   ├── pytest.ini           Test config — pythonpath, testpaths
-│   ├── .env.example         Backend env template
-│   └── README.md            Backend-specific docs
-│
-├── frontend/                Next.js 16 + React 19 dashboard
-│   ├── src/
-│   │   ├── app/             App router
-│   │   ├── components/      UI + per-tab pages
-│   │   ├── hooks/           use-api hook
-│   │   └── lib/             api.ts, i18n, time helpers
-│   ├── public/
-│   ├── package.json
-│   ├── .env.example         Frontend env template
+.
+├── backend/                FastAPI + ML + monitoring (Python 3.11)
+│   ├── src/                Application code (imported as `src.*`)
+│   ├── configs/            paths.py + settings.py (`configs.*`)
+│   ├── scripts/            serve.py, train.py, smoke_check.py, …
+│   ├── tests/              108 pytest tests
+│   ├── models/             Trained joblibs + YOLO weights (~8 MB, committed)
+│   ├── data/               Engineered training set + OOF CSVs + camera_mapping
+│   ├── outputs/            SQLite DB karabuk_fwi.db (auto-created, gitignored)
+│   ├── requirements.txt    sklearn pinned to 1.6.1
 │   └── README.md
 │
-├── scripts/                 Local Hardware Mode helpers (PowerShell)
-│   ├── check_ports.ps1      Confirm 8000 + 3000 are free
-│   ├── start_backend.ps1    Boot the API with auto .venv create
-│   ├── start_frontend.ps1   Boot the dashboard with auto npm install
-│   └── cleanup_local.ps1    Dry-run cleanup for caches / DB backups
+├── frontend/               Next.js 16 + React 19 dashboard
+│   ├── src/                App router, components, hooks, lib
+│   ├── public/
+│   └── README.md
 │
-├── docs/                    All long-form project documentation
-│   ├── RUN_PROJECT.md       Operator runbook
-│   ├── CORE_IDEA.md         Architectural invariants and contracts
-│   ├── ARCHITECTURE.md      System architecture deep-dive
-│   ├── DEPLOYMENT_PLAN.md   Deferred container roadmap (not active)
-│   ├── SQLITE_GUIDE.md      Schema and migration rules
-│   ├── PROJECT_BRIEF.md     Goals and phases
-│   ├── PHASE1_SUMMARY.md    ML core completion notes
-│   ├── PHASE3_SUMMARY.md    Frontend foundation notes
-│   ├── STATUS.md            Current project status
-│   ├── NEXT_STEPS.md        Outstanding follow-ups
-│   ├── OLD_PROJECT_NOTES.md Historical notes
-│   └── Fire_Prediction_Blueprint.pdf
+├── docs/                   Active operator + reviewer documentation
+│   └── archive/            Historical phase notes
 │
-├── README.md                You are here
-├── .gitignore
-└── legacy_detection_reference/   reference-only legacy detection prototype
+├── scripts/                PowerShell helpers for Local Hardware Mode
+├── legacy_detection_reference/   Reference-only legacy detection prototype
+├── README.md               You are here
+└── .gitignore
 ```
 
 ---
 
-## Requirements
+## System layers
 
-| Tool | Version | Notes |
+The codebase is organised as six layers. Each one has a single
+responsibility and a clear boundary with its neighbours.
+
+| Layer | Where it lives | What it does |
 |---|---|---|
-| Python | 3.11+ (3.10 minimum) | sklearn pin requires modern Python |
-| Node.js | 20+ | required by Next.js 16 |
-| npm | 10+ | ships with Node 20 |
-| Git | 2.40+ | |
-| OS | Windows 10/11, macOS, Linux | |
+| **Data** | `backend/src/data/`, `backend/data/processed/` | Fetches Open-Meteo + soil-moisture, builds the 34 engineered features. |
+| **ML prediction** | `backend/src/inference/`, `backend/src/models/`, `backend/models/` | Stage 1 HistGradientBoosting regressor → predicted FWI. Stage 2 RandomForest classifier → high-risk probability. Stacked decision rule applies the 35 / 28 / 0.10 thresholds. |
+| **Detection** | `backend/src/monitoring/`, `backend/models/fire_detection/best3.pt` | YOLOv8 fire / smoke detection on webcam, PC camera, and Tello drone feeds. Strictly isolated from the prediction layer. |
+| **API / backend** | `backend/src/api/` (FastAPI + APScheduler) | Serves all endpoints, schedules the 11:00 / 15:00 Istanbul runs, prewarms model loads at boot. |
+| **Database** | `backend/outputs/karabuk_fwi.db` (SQLite) | Three tables — `run_history` (audit), `system_state` (drone + weather snapshots), `detection_alerts` (read/unread alert log). Snapshots stay as JPGs on disk. |
+| **Frontend / dashboard** | `frontend/` | Eight-tab Next.js dashboard. Polls the API; never holds state of its own. |
 
-The backend additionally needs network access to:
-
-- `api.open-meteo.com`
-- `archive-api.open-meteo.com`
-
-No paid API keys are required — Open-Meteo is public and key-less.
+The **prediction** layer and the **detection** layer never write to
+each other's tables. That isolation is enforced by an AST-level test
+in `backend/tests/test_monitoring.py`.
 
 ---
 
-## Quick start — Local Hardware Mode (official runtime)
+## Setup
 
-The project's official runtime is **Local Hardware Mode**: the
-backend runs directly on the Windows host so the dashboard's live
-webcam, PC-camera, and Tello drone monitoring can reach the actual
-USB devices via DirectShow. This is a core objective of the project,
-not a fallback — there is no Docker / cloud path in the active
-workflow.
+You need **Python 3.11+**, **Node.js 20+**, and **npm 10+**. No paid
+API keys: Open-Meteo is free.
 
 ```powershell
-# 1. Clone
-git clone <this-repo-url> karabuk-fwi-ml
-cd karabuk-fwi-ml
-
-# 2. Backend — create venv + install (one-time)
+# from project root
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r backend\requirements.txt
 
-# 3. Frontend — install (one-time)
 cd frontend
 npm install
 cd ..
+```
 
-# 4. Run both (two terminals from the project root)
-# Terminal A — backend on port 8000
+Models and the engineered training set are already in the repo, so
+you do not need to download anything else.
+
+---
+
+## Run the backend
+
+```powershell
 .\.venv\Scripts\Activate.ps1
 python backend\scripts\serve.py
+```
 
-# Terminal B — frontend on port 3000
+The API listens on **<http://localhost:8000>**. On boot it:
+
+- creates the SQLite database if it doesn't exist;
+- imports any legacy `alerts.jsonl` rows into the `detection_alerts`
+  table (idempotent);
+- pre-warms the stacked model and the YOLO detector;
+- starts APScheduler with two operational slots — 11:00 and 15:00
+  Europe/Istanbul.
+
+Useful URLs while the backend is running:
+
+- API docs (Swagger): <http://localhost:8000/docs>
+- Health check: <http://localhost:8000/system/health>
+- Latest prediction: <http://localhost:8000/risk/latest>
+
+## Run the frontend
+
+```powershell
 cd frontend
 npm run dev
 ```
 
-Or, even shorter, use the wrappers in `scripts\`:
+The dashboard listens on **<http://localhost:3000>**.
+
+> **Shortcut.** From the project root, `scripts\start_backend.ps1`
+> and `scripts\start_frontend.ps1` do the same as above and also
+> auto-create `.venv` / `node_modules` if they're missing.
+> `scripts\check_ports.ps1` confirms 8000 and 3000 are free first.
+
+## Run the tests
 
 ```powershell
-powershell -File scripts\check_ports.ps1     # confirms 8000+3000 free
-powershell -File scripts\start_backend.ps1   # creates .venv if needed, then serves
-powershell -File scripts\start_frontend.ps1  # npm install if needed, then dev
+python -m pytest backend\tests -v
 ```
 
-Then open:
+Current baseline: **108 tests passing**. The test suite uses an
+isolated temporary SQLite database so it never touches your real
+runtime DB.
 
-- Dashboard:    <http://localhost:3000>
-- API docs:     <http://localhost:8000/docs>
-- Health check: <http://localhost:8000/system/health>
+A full smoke check (every endpoint the dashboard uses) is one
+command:
 
-That's the entire bring-up. **No model files need to be downloaded
-separately** — every artefact in `backend/models/` is committed
-(~8 MB). The first manual run created from the dashboard immediately
-shows up in Run History; the first detection raised by the camera or
-drone immediately shows up in Detection Alerts.
-
----
-
-## Backend setup
-
-```bash
-python -m pip install -r backend/requirements.txt
-python backend/scripts/serve.py
+```powershell
+python backend\scripts\smoke_check.py
 ```
-
-Behaviour on boot:
-
-- Initialises the SQLite database at `backend/outputs/karabuk_fwi.db`.
-- Pre-warms the stacked predictor (Stage 1 + Stage 2 joblib loads).
-- Pre-warms the YOLO detector (best-effort).
-- Validates the persisted camera mapping.
-- Starts APScheduler with two operational slots: 11:00 and 15:00
-  Europe/Istanbul.
-
-Detailed runbook: [`docs/RUN_PROJECT.md`](./docs/RUN_PROJECT.md).
-Backend-specific docs: [`backend/README.md`](./backend/README.md).
-
----
-
-## Frontend setup
-
-```bash
-cd frontend
-npm install
-npm run dev          # development server on http://localhost:3000
-npm run build        # production build
-npm run start        # production server
-npm run lint
-```
-
-The frontend reads exactly one environment variable,
-`NEXT_PUBLIC_API_URL`, with `http://localhost:8000` as the fallback.
-See [`frontend/.env.example`](./frontend/.env.example).
-
-> ⚠️ This project pins **Next.js 16 + React 19**. The conventions
-> differ from older Next versions — read
-> `frontend/node_modules/next/dist/docs/` (or the official Next 16
-> docs) before making framework-level changes.
 
 ---
 
 ## Database
 
-The backend uses **SQLite** for run history and system state. The
-operational database lives at `backend/outputs/karabuk_fwi.db` and is
-created automatically on first boot — **no migrations to run, no seed
-script to execute, no separate database server**.
-
-- The path is gitignored; collaborators get a fresh DB on their first
-  run.
-- Override with the `KARABUK_DB_PATH` env var if you need a custom
-  location.
-- Tests use a temp DB injected via the same env var (see
-  `backend/tests/conftest.py`).
-- One legacy migration script lives at
-  `backend/scripts/migrate_run_timestamps_to_istanbul.py` — only
-  needed if you have run-history rows from before the timezone fix.
-
-Schema reference: [`docs/SQLITE_GUIDE.md`](./docs/SQLITE_GUIDE.md).
-
----
-
-## Model files
-
-Every trained artefact is committed to the repo (~8 MB total), so a
-fresh clone is immediately runnable. See
-[`backend/models/README.md`](./backend/models/README.md) for the full
-breakdown.
-
-| File | Purpose |
+| Item | Location |
 |---|---|
-| `backend/models/stage1/histgb_regressor.joblib` | Stage 1 FWI regressor |
-| `backend/models/stage2/rf_classifier_stacked.joblib` | Stage 2 high-risk classifier |
-| `backend/models/metadata/stage1_metadata.json` | Stage 1 metrics |
-| `backend/models/metadata/stage2_metadata.json` | Stage 2 metrics + tuned probability threshold |
-| `backend/models/metadata/three_way_comparison.json` | Decision-rule comparison shown in the System tab |
-| `backend/models/fire_detection/best3.pt` | YOLOv8 fire detector (monitoring layer) |
+| SQLite database | `backend/outputs/karabuk_fwi.db` (auto-created, gitignored) |
+| Snapshot JPGs | `backend/data/notifications/<source>_<timestamp>.jpg` |
+| Schema doc | [`docs/SQLITE_GUIDE.md`](./docs/SQLITE_GUIDE.md) |
 
-To retrain:
-
-```bash
-python backend/scripts/train.py
-```
-
-> `backend/requirements.txt` pins `scikit-learn==1.6.1` to match the
-> version used to pickle the joblibs. Do not upgrade sklearn without
-> retraining.
-
-**Git LFS is not used.** The total model footprint (~8 MB) is well
-under GitHub's 100 MB hard limit. Revisit only if a future retraining
-run produces a materially larger artefact.
+The three tables — `run_history`, `system_state`, `detection_alerts` —
+are created on first run. The legacy JSONL evidence file
+`backend/data/notifications/alerts.jsonl` is kept on disk but is
+no longer written to; on every backend boot, any rows it contains
+that are not yet in `detection_alerts` are imported (idempotently).
 
 ---
 
-## Environment variables
+## API endpoints
 
-| Variable | Scope | Default | Purpose |
-|---|---|---|---|
-| `KARABUK_DB_PATH` | backend | `backend/outputs/karabuk_fwi.db` | Override SQLite location (used by tests). |
-| `NEXT_PUBLIC_API_URL` | frontend | `http://localhost:8000` | Backend base URL. |
+| Endpoint | Method | What it returns |
+|---|---|---|
+| `/system/health` | GET | Stage 1 / Stage 2 / DB health |
+| `/system/model` | GET | Model metadata + thresholds |
+| `/system/scheduler` | GET | APScheduler jobs + next run times |
+| `/system/config` | GET | Public runtime flags (env, demo enabled) |
+| `/risk/check` | POST | Run a manual FWI check |
+| `/risk/latest` | GET | Latest operational prediction |
+| `/history/runs` | GET | Paginated run audit log |
+| `/history/runs/{id}` | GET | One run with full feature payload |
+| `/history/analytics` | GET | Long-range FWI analytics |
+| `/weather/live` | GET | Display-only current weather |
+| `/drone/state` | GET | Read-only drone launch policy |
+| `/monitoring/cameras` | GET | Per-camera status |
+| `/monitoring/cameras/{id}/start\|stop` | POST | Start / stop a camera feed |
+| `/monitoring/cameras/{id}/feed` | GET | MJPEG stream |
+| `/monitoring/drone/start\|stop\|status\|feed` | misc | Tello drone control |
+| `/monitoring/alerts` | GET | Detection alerts list (`?source=`, `?filter=unread\|read`) |
+| `/monitoring/alerts/summary` | GET | Totals + unread/read counts |
+| `/monitoring/alerts/latest` | GET | Newest alert (banner poll target) |
+| `/monitoring/alerts/{id}` | GET | One alert with bbox list |
+| `/monitoring/alerts/{id}/read\|unread` | POST | Flip read state |
+| `/monitoring/alerts/mark-all-read` | POST | Bulk mark read |
+| `/monitoring/alerts/test` | POST | Append a synthetic alert (demo mode) |
 
-Templates:
-[`backend/.env.example`](./backend/.env.example),
-[`frontend/.env.example`](./frontend/.env.example).
-
-No real secrets are required to run the project.
-
----
-
-## Tests
-
-From the project root:
-
-```bash
-python -m pytest backend/tests -q
-```
-
-Or, equivalently, from inside `backend/`:
-
-```bash
-cd backend && python -m pytest -v
-```
-
-Both commands work — `backend/pytest.ini` sets the right
-`pythonpath` and `testpaths`. Current baseline: **97 tests passing**.
-The suite covers prediction, API routes, monitoring, run-type
-taxonomy, JSON serialization safety, walk-forward training, and
-stacking. Tests redirect the SQLite DB to a temp file, so they never
-pollute `backend/outputs/karabuk_fwi.db`.
-
-### One-shot smoke check
-
-For a quick "is the whole thing wired up correctly?" probe — useful
-right after a fresh clone, after pulling new commits, or while
-debugging an empty dashboard — run:
-
-```bash
-# from project root, in-process (fastest)
-python backend/scripts/smoke_check.py
-
-# or, against an already-running backend
-python backend/scripts/smoke_check.py --url http://localhost:8000
-```
-
-The script verifies every model artefact is on disk, opens the
-configured SQLite DB and reports the `run_history` row count, then
-hits every endpoint the dashboard consumes. Exit code is 0 on
-success and 1 on any failure, so it is safe to chain into a CI
-step or a git hook.
-
-GitHub Actions runs the backend pytest suite, the backend smoke
-check, and the frontend production build on push and pull request.
-Hardware camera / drone paths and Docker are intentionally not run
-in CI.
+The full OpenAPI spec is always live at
+<http://localhost:8000/docs>.
 
 ---
 
-## Runtime data and persistence
+## Dashboard usage
 
-Two things are durable but **gitignored** (created on first run, never
-committed):
+Eight tabs in the sidebar (left → right):
 
-- **SQLite database** — `backend/outputs/karabuk_fwi.db`. Holds
-  `run_history` (Stacked v3 audit log), `system_state` (drone state,
-  live-weather snapshot), and `detection_alerts` (Detection Alerts
-  evidence + read/unread state). Schema is bootstrapped automatically
-  by `init_db()` on every backend boot.
-- **Snapshot JPEGs** — `backend/data/notifications/*.jpg`. Written by
-  the YOLO inference loop whenever a detection fires; referenced by
-  `detection_alerts.snapshot_path` and served via `/static/notifications/`.
+1. **Overview** — current FWI tile, scheduler, live weather.
+2. **Impact & Context** — why this matters (Karabük 2025 fires).
+3. **Risk Decision** — manual run trigger and decision explanation.
+4. **Features** — raw inputs and all 34 engineered features for the
+   latest operational run.
+5. **Analytics** — long-range FWI trend (yearly / seasonal / monthly).
+6. **Run History** — paginated audit log with full drill-down.
+7. **Monitoring** — webcam, PC-camera, and drone live feeds; auto-detect.
+8. **Detection Alerts** — durable evidence centre with filter pills
+   (All / Unread / Read), per-alert mark-as-read, and bulk
+   "Mark all as read." The latest alert also surfaces as a banner.
 
-A fresh clone has zero rows in any of these. Trigger a real run from
-the dashboard's **Risk Decision** tab to populate `run_history`, or
-use the optional demo seeder:
+A small **System** tile on the Overview tab shows model info, health,
+and the next scheduler run.
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-python backend\scripts\seed_demo_runtime.py
-```
-
-The seeder appends two synthetic Detection Alerts (one fire, one
-smoke, both `source="demo"`) and prints a copy-pasteable curl that
-creates a real `run_history` row.
-
-> **Legacy JSONL → SQLite migration is automatic.** If your project
-> still has the old `backend/data/notifications/alerts.jsonl` file
-> from earlier runs, it is imported into the SQLite
-> `detection_alerts` table on the next backend boot. The import is
-> idempotent (rows are matched by `alert_id`) and the JSONL file is
-> preserved on disk for forensic use.
-
-## Docker / deployment
-
-Docker is **deliberately not part of the active workflow.** The
-project's core monitoring objective — live webcam, PC camera, and
-Tello drone — depends on Windows DirectShow access that Docker
-Desktop on Windows cannot pass through. See
-[`docs/DEPLOYMENT_PLAN.md`](./docs/DEPLOYMENT_PLAN.md) for the
-deferred container roadmap (when, why, and what would have to change).
-
-Local cleanup is dry-run by default:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\cleanup_local.ps1
-powershell -ExecutionPolicy Bypass -File scripts\cleanup_local.ps1 -Apply
-```
-
-The cleanup helper removes caches and build output only; it never
-removes the active SQLite DB, alert JSONL/read-state/JPG evidence,
-`.venv`, `node_modules`, or DB backups.
-
-The old `.claude/` worktree folder is not part of the current project
-workflow. It is ignored and should be removed locally if it appears;
-the active workflow is the normal Git `main` branch plus Codex changes.
+All times in the UI are **Europe/Istanbul** (TRT, +03:00 / +04:00).
 
 ---
 
-## Common errors and fixes
+## Troubleshooting
 
-**`ModuleNotFoundError: No module named 'src'` when running scripts.**
-Run from the project root, or `cd backend` first. The entry-point
-scripts inject the right directory into `sys.path` automatically.
+**Dashboard shows nothing.** Run `python backend\scripts\smoke_check.py`.
+It checks every endpoint the dashboard uses and prints which one
+broke. The most common cause is "fresh clone, no runs yet": click
+**Run Manual Check** on the Risk Decision tab.
 
-**`InconsistentVersionWarning` from joblib.**
-You upgraded scikit-learn past 1.6.1. Either downgrade
-(`pip install scikit-learn==1.6.1`) or retrain
-(`python backend/scripts/train.py`).
+**Camera says "unavailable".** Run
+`python backend\scripts\check_cameras.py` to see which OpenCV
+indices are reachable. Then click **Auto-detect** on the Monitoring
+tab to bind the highest-resolution opened device to `webcam` and
+the next one to `pc_camera`.
 
-**Frontend cannot reach the backend.**
-Check that the backend is running on port 8000 and that
-`NEXT_PUBLIC_API_URL` either is unset or matches the backend URL.
-Restart `npm run dev` after editing `frontend/.env.local`.
+**Detection Alerts is empty.** Click **Test alert** in the
+Detection Alerts tab — it appends a synthetic fire alert through
+the same path as a real detection. If the test alert appears, the
+pipeline is wired up correctly; you just don't have any real
+detections yet.
 
-**`ultralytics` / OpenCV install fails.**
-The monitoring layer is optional. Comment out the `ultralytics`,
-`opencv-python` and `djitellopy` lines in `backend/requirements.txt`
-if you only need the prediction backend.
-
-**Monitoring camera feed is unavailable.**
-The Monitoring tab uses backend OpenCV capture (DSHOW on Windows),
-not browser webcam permission prompts. From a fresh clone:
-
-1. Confirm the backend is running locally with
-   `python backend\scripts\serve.py` (NOT in Docker — the project's
-   official runtime is Local Hardware Mode for exactly this reason).
-2. Run the camera diagnostic from the project root:
-   `python backend\scripts\check_cameras.py`. It probes the local
-   OpenCV indices and reports which ones can deliver a frame.
-3. On the Monitoring tab, click **Auto-detect** under Devices
-   Detected — the backend rebinds the highest-resolution opened
-   index to `webcam` and the next one to `pc_camera`.
-
-Prediction, Run FWI, and Detection Alerts remain fully usable even
-when camera hardware is unavailable.
-
-**`backend/outputs/karabuk_fwi.db` is missing.**
-Created automatically on first backend boot. If the file is locked
-on Windows, stop any running backend instance first.
-
-**Wrong timestamps in the dashboard (off by 3 hours).**
-Run the one-shot migration:
-```bash
-python backend/scripts/migrate_run_timestamps_to_istanbul.py
-```
-
-**Detection Alerts tab is empty.** See the
-[Detection Alerts and Dashboard Notifications](#detection-alerts-and-dashboard-notifications)
-section below — usually means the JSONL evidence log is at a stale
-location, or no alerts have been raised yet (click **Test alert** in
-the tab header to verify the pipeline is wired up).
-
-**Dashboard is empty (no Overview tile, no Run History rows).**
-Almost always one of three things — the smoke check tells you
-which:
-
-```bash
-python backend/scripts/smoke_check.py
-```
-
-1. **Backend is not running**, or the frontend is pointed at the
-   wrong URL. Confirm `curl http://localhost:8000/system/health`
-   returns `200`, and that `NEXT_PUBLIC_API_URL` in
-   `frontend/.env.local` matches.
-2. **The SQLite database is empty** — fresh clone, no runs yet.
-   Trigger one from the **Risk Decision** tab → **Run Manual
-   Check** (or `curl -X POST http://localhost:8000/risk/check
-   -H "Content-Type: application/json" -d '{}'`). The new run
-   appears in Overview and Run History within a second.
-3. **Stale DB at the legacy path** (only if you upgraded across
-   the `backend/` restructure). Real history at
-   `outputs/karabuk_fwi.db` and an empty new DB at
-   `backend/outputs/karabuk_fwi.db`. Migration is a one-liner —
-   stop the backend, then:
-   ```bash
-   # back up the empty DB, copy the legacy one in, archive the
-   # legacy file
-   mv backend/outputs/karabuk_fwi.db backend/outputs/karabuk_fwi.db.empty.bak
-   cp outputs/karabuk_fwi.db backend/outputs/karabuk_fwi.db
-   mv outputs/karabuk_fwi.db outputs/karabuk_fwi.db.legacy.bak
-   ```
-   Both DBs share the same schema, so the data lands in the
-   correct tables.
+**`InconsistentVersionWarning` from joblib.** Your `scikit-learn`
+is newer than the pinned 1.6.1. Either downgrade or retrain with
+`python backend\scripts\train.py`.
 
 ---
 
-## Detection Alerts and Dashboard Notifications
+## Documentation
 
-The **Detection Alerts** tab is the durable evidence centre for every
-fire / smoke detection raised by the drone, webcam, or PC camera. It
-is strictly separate from the FWI prediction pipeline — alerts here
-never influence `predicted_fwi`, `high_risk_flag`, or the drone
-launch policy.
-
-### Storage
-
-- **SQLite `detection_alerts` table** (`backend/outputs/karabuk_fwi.db`)
-  is the source of truth. Holds alert id, Istanbul ISO timestamp,
-  label, confidence, source, snapshot path, `is_read` flag,
-  `read_at`, severity, and the full per-detection bbox list. The
-  schema is bootstrapped by `init_db()` and is byte-compatible with
-  the existing `run_history` and `system_state` tables — same DB file,
-  separate write paths.
-- **JPEG snapshots** stay on disk as
-  `backend/data/notifications/<source>_<ts>.jpg`, served via the
-  FastAPI static mount at `/static/notifications/`. Referenced by
-  `detection_alerts.snapshot_path`.
-- **In-memory ring buffer** holds the most recent ~200 alerts for the
-  live `/monitoring/notifications` feed. Rehydrated from SQLite at
-  startup so a restart never appears to "lose" the live feed.
-- **Legacy `alerts.jsonl`** (and the legacy `alerts_read_state.json`
-  sidecar) are read once on startup and imported into SQLite by
-  `import_legacy_jsonl()`. The import is idempotent (rows match by
-  `alert_id`); the JSONL file is preserved on disk for forensic /
-  external use, never written to going forward.
-
-The whole `backend/data/notifications/` tree is **gitignored runtime
-state** — fresh detections do not dirty the working tree. If you
-clone the repo, the directory is created on first detection (the
-backend mkdirs it lazily).
-
-### Endpoints
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /monitoring/alerts` | Paginated list, newest first, optional `?source=drone\|webcam\|pc_camera\|demo` and `?filter=all\|unread\|read` filters. |
-| `GET /monitoring/alerts/summary` | `{ total, unread_count, read_count, by_source, max_confidence, last_time_str, last_source, last_by_source }` — drives the summary tiles. |
-| `GET /monitoring/alerts/latest` | `{ alert: <single alert> | null }` — cheap poll target for the in-app notification banner. |
-| `GET /monitoring/alerts/{alert_id}` | One alert with the full per-detection list (label / confidence / bbox). |
-| `POST /monitoring/alerts/{alert_id}/read` | Set `is_read=1, read_at=<istanbul-iso>` for one alert. |
-| `POST /monitoring/alerts/{alert_id}/unread` | Set `is_read=0, read_at=NULL` for one alert. |
-| `POST /monitoring/alerts/mark-all-read` | Mark every currently logged alert as read. |
-| `POST /monitoring/alerts/test?label=fire&confidence=0.78&source=demo` | Append a synthetic alert through the real persistence path when `DEMO_ALERTS_ENABLED=true`. Useful when no camera/drone hardware is available; the frontend hides the **Test alert** button when `/system/config` reports demo alerts disabled. |
-| `GET /monitoring/notifications` | Recent ring-buffer view (subset of JSONL). |
-
-### Dashboard notification banner
-
-A floating banner mounted in the app shell
-(`frontend/src/components/layout/alert-banner.tsx`) polls
-`GET /monitoring/alerts/latest` every 5 seconds. When the latest
-alert id changes (i.e. a new fire / smoke detection lands), it shows
-a top-right banner with the source, confidence, and snapshot
-thumbnail, regardless of which tab the operator has open. The banner
-auto-dismisses after 12 seconds and can be closed manually. The
-first poll after page load primes the seen-id ref but does NOT
-trigger the banner — otherwise every reload would feel like a fresh
-detection.
-
-### How to test without camera hardware
-
-1. Open the **Detection Alerts** tab.
-2. Click **Test alert** in the header. A synthetic `source="demo"`
-   alert appends through the same persistence path as a real
-   detection.
-3. The summary tiles update, the table gains a row, and the
-   floating banner fires (auto-dismisses after 12 s).
-4. The alert is durable — refresh the page and it is still there.
-
-Or, from a shell (smoke / CI use):
-
-```bash
-curl -X POST "http://localhost:8000/monitoring/alerts/test?label=smoke&confidence=0.91"
-```
-
-Demo alerts are tagged with `"source": "demo"` so they can be filtered
-or reviewed separately. Treat `alerts.jsonl` as runtime evidence: do
-not delete it as part of normal cleanup.
-
-### Hardware unavailable
-
-If the camera / drone hardware isn't plugged in, the Monitoring tab
-shows hardware status (camera indices, running/stopped state, drone
-status) and the professional unavailable message above. The Detection
-Alerts tab shows the existing JSONL evidence (or a clean empty state
-with the **Test alert** affordance). Neither tab crashes - every
-monitoring import in `backend/src/monitoring/` is optional and degrades
-gracefully (see `backend/configs/paths.py::FIRE_DETECTION_MODEL_PATH`
-and the ImportError-tolerant import of `cv2` in `notifications.py`).
-
-### Troubleshooting: Detection Alerts is empty
-
-```bash
-python backend/scripts/smoke_check.py
-```
-
-Look at the `--- endpoints ---` section: if
-`/monitoring/alerts/summary` returns `total=0` but you expect rows,
-the JSONL evidence log is missing or at a stale path. The most
-common cause across the `backend/` restructure: alerts were written
-to `data/notifications/alerts.jsonl` (legacy root) and the
-post-restructure backend now reads
-`backend/data/notifications/alerts.jsonl`. Migrate with:
-
-```bash
-mkdir -p backend/data/notifications
-mv data/notifications/alerts.jsonl backend/data/notifications/
-mv data/notifications/*.jpg        backend/data/notifications/   # if any
-```
-
-Restart the backend; `hydrate_ring_buffer_from_log()` picks the new
-file up automatically.
-
----
-
-## Documentation index
-
-| File | Topic |
-|---|---|
-| [`docs/RUN_PROJECT.md`](./docs/RUN_PROJECT.md) | Operator runbook (boot, scheduler, manual checks, monitoring) |
-| [`docs/CORE_IDEA.md`](./docs/CORE_IDEA.md) | Architectural invariants and contracts |
-| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | System architecture deep-dive |
-| [`docs/DEPLOYMENT_PLAN.md`](./docs/DEPLOYMENT_PLAN.md) | Docker / deployment roadmap |
-| [`docs/SQLITE_GUIDE.md`](./docs/SQLITE_GUIDE.md) | Schema, migrations, conventions |
-| [`docs/PROJECT_BRIEF.md`](./docs/PROJECT_BRIEF.md) | Project goals and phases |
-| [`docs/PHASE1_SUMMARY.md`](./docs/PHASE1_SUMMARY.md) | ML core completion notes |
-| [`docs/PHASE3_SUMMARY.md`](./docs/PHASE3_SUMMARY.md) | Frontend foundation notes |
-| [`docs/STATUS.md`](./docs/STATUS.md) | Current project status |
-| [`docs/NEXT_STEPS.md`](./docs/NEXT_STEPS.md) | Outstanding follow-ups |
-| [`backend/README.md`](./backend/README.md) | Backend-specific docs |
-| [`backend/models/README.md`](./backend/models/README.md) | Per-artefact model reference |
-| [`backend/data/README.md`](./backend/data/README.md) | Per-folder data reference |
-| [`frontend/README.md`](./frontend/README.md) | Frontend-specific docs |
+- **Where to start:** [`docs/README.md`](./docs/README.md) — index.
+- **Architecture:** [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
+- **Run instructions:** [`docs/RUN_PROJECT.md`](./docs/RUN_PROJECT.md).
+- **Database schema:** [`docs/SQLITE_GUIDE.md`](./docs/SQLITE_GUIDE.md).
+- **Architectural invariants:** [`docs/CORE_IDEA.md`](./docs/CORE_IDEA.md).
+- **Goals + phases:** [`docs/PROJECT_BRIEF.md`](./docs/PROJECT_BRIEF.md).
+- **Historical phase notes:** [`docs/archive/`](./docs/archive/).
 
 ---
 
