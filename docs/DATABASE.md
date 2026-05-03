@@ -63,6 +63,8 @@ Real columns in the active database:
 - `snapshot_path`
 - `is_read`
 - `read_at`
+- `is_deleted`
+- `deleted_at`
 - `detection_count`
 - `detections_json`
 - `raw_payload_json`
@@ -74,6 +76,10 @@ relationship between prediction runs and detection alerts.
 Read/unread state is stored in SQLite using `is_read` and `read_at`. New alerts
 start unread. When an operator opens or marks an alert as read, the backend
 updates these columns so the state survives refreshes and backend restarts.
+
+Dashboard deletion uses soft delete. `is_deleted` and `deleted_at` hide an alert
+from normal dashboard views while keeping the SQLite row and snapshot path for
+evidence.
 
 ## Test and Probe Databases
 

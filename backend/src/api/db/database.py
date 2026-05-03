@@ -85,6 +85,8 @@ CREATE TABLE IF NOT EXISTS detection_alerts (
     snapshot_path TEXT,                    -- /static/notifications/<file>.jpg
     is_read INTEGER NOT NULL DEFAULT 0,
     read_at TEXT,                          -- Istanbul ISO 8601 (or NULL)
+    is_deleted INTEGER NOT NULL DEFAULT 0,
+    deleted_at TEXT,                       -- Istanbul ISO 8601 (or NULL)
     detection_count INTEGER NOT NULL DEFAULT 0,
     detections_json TEXT,                  -- per-bbox list, same shape as JSONL
     raw_payload_json TEXT                  -- full original payload, audit-grade
@@ -108,18 +110,22 @@ def init_db():
     conn = get_connection()
     try:
         conn.executescript(_CREATE_TABLES)
-        _ensure_detection_alert_read_columns(conn)
+        _ensure_detection_alert_state_columns(conn)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_detection_alerts_unread "
             "ON detection_alerts (is_read, timestamp_epoch DESC)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_detection_alerts_visible "
+            "ON detection_alerts (is_deleted, timestamp_epoch DESC)"
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def _ensure_detection_alert_read_columns(conn: sqlite3.Connection) -> None:
-    """Add read-state columns for older SQLite alert tables.
+def _ensure_detection_alert_state_columns(conn: sqlite3.Connection) -> None:
+    """Add alert state columns for older SQLite alert tables.
 
     The current schema already includes these columns. This migration is
     intentionally additive so existing alert rows and evidence are preserved.
@@ -135,6 +141,13 @@ def _ensure_detection_alert_read_columns(conn: sqlite3.Connection) -> None:
         )
     if "read_at" not in cols:
         conn.execute("ALTER TABLE detection_alerts ADD COLUMN read_at TEXT")
+    if "is_deleted" not in cols:
+        conn.execute(
+            "ALTER TABLE detection_alerts "
+            "ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0"
+        )
+    if "deleted_at" not in cols:
+        conn.execute("ALTER TABLE detection_alerts ADD COLUMN deleted_at TEXT")
 
 
 def save_run(run_result: dict):

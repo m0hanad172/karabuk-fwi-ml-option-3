@@ -456,6 +456,8 @@ class TestDetectionAlertsReadState:
         assert a["read"] is False
         assert a["is_read"] == 0
         assert a["read_at"] is None
+        assert a["is_deleted"] == 0
+        assert a["deleted_at"] is None
 
     def test_summary_reports_unread_and_read_counts(self, client):
         notif.clear_notifications()
@@ -521,6 +523,90 @@ class TestDetectionAlertsReadState:
         notif.clear_notifications()
         r = client.post("/monitoring/alerts/does-not-exist/read")
         assert r.status_code == 404
+
+    def test_delete_alert_hides_from_normal_views(self, client):
+        from src.api.db.database import get_connection
+
+        notif.clear_notifications()
+        a1 = client.post("/monitoring/alerts/test").json()
+        a2 = client.post("/monitoring/alerts/test").json()
+
+        r = client.delete(f"/monitoring/alerts/{a1['id']}")
+        assert r.status_code == 200
+        assert r.json()["deleted"] is True
+        assert r.json()["deleted_at"]
+
+        rows = client.get("/monitoring/alerts").json()["alerts"]
+        assert {a["id"] for a in rows} == {a2["id"]}
+
+        summary = client.get("/monitoring/alerts/summary").json()
+        assert summary["total"] == 1
+        assert summary["unread_count"] == 1
+        assert summary["latest_alert"]["id"] == a2["id"]
+
+        notifications = client.get("/monitoring/notifications").json()["notifications"]
+        assert {n["id"] for n in notifications} == {a2["id"]}
+
+        detail = client.get(f"/monitoring/alerts/{a1['id']}")
+        assert detail.status_code == 404
+
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT is_deleted, deleted_at FROM detection_alerts WHERE alert_id = ?",
+                (a1["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        assert row["is_deleted"] == 1
+        assert row["deleted_at"]
+
+    def test_delete_alert_is_idempotent(self, client):
+        notif.clear_notifications()
+        a = client.post("/monitoring/alerts/test").json()
+        first = client.delete(f"/monitoring/alerts/{a['id']}")
+        second = client.delete(f"/monitoring/alerts/{a['id']}")
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["deleted"] is True
+        assert second.json()["deleted"] is True
+        assert first.json()["deleted_at"] == second.json()["deleted_at"]
+
+    def test_deleted_state_survives_new_db_connection(self, client):
+        from src.api.db.database import get_connection
+
+        notif.clear_notifications()
+        a = client.post("/monitoring/alerts/test").json()
+        client.delete(f"/monitoring/alerts/{a['id']}")
+
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT is_deleted, deleted_at FROM detection_alerts WHERE alert_id = ?",
+                (a["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        assert row is not None
+        assert row["is_deleted"] == 1
+        assert row["deleted_at"]
+
+    def test_mark_read_on_deleted_alert_does_not_make_visible(self, client):
+        notif.clear_notifications()
+        a = client.post("/monitoring/alerts/test").json()
+        client.delete(f"/monitoring/alerts/{a['id']}")
+
+        r = client.post(f"/monitoring/alerts/{a['id']}/read")
+        assert r.status_code == 404
+
+        rows = client.get("/monitoring/alerts").json()["alerts"]
+        assert rows == []
+        summary = client.get("/monitoring/alerts/summary").json()
+        assert summary["total"] == 0
+        assert summary["unread_count"] == 0
 
     def test_mark_read_is_idempotent(self, client):
         notif.clear_notifications()

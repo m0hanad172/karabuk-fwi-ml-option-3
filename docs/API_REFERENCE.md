@@ -142,6 +142,7 @@ connected — see the operational logic in
 | POST | `/monitoring/alerts/mark-all-read` | Mark every alert as read |
 | POST | `/monitoring/alerts/{alert_id}/read` | Mark one alert as read |
 | POST | `/monitoring/alerts/{alert_id}/unread` | Mark one alert as unread |
+| DELETE | `/monitoring/alerts/{alert_id}` | Soft-delete one alert from dashboard views |
 | GET | `/monitoring/alerts/{alert_id}` | Get one alert with detection details |
 
 Optional query parameters for `/monitoring/alerts`:
@@ -160,3 +161,7 @@ curl "http://localhost:8000/monitoring/alerts?limit=10&filter=unread"
 Alert responses include `is_read`, `read`, and `read_at`. Calling
 `POST /monitoring/alerts/{alert_id}/read` is idempotent and persists the read
 state in SQLite.
+
+Normal alert and notification endpoints hide soft-deleted alerts. Deletion sets
+`is_deleted` and `deleted_at`; it does not remove the SQLite evidence row or
+snapshot file.

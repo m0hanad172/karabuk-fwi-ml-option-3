@@ -321,6 +321,17 @@ async def alert_mark_unread(alert_id: str):
     return alert
 
 
+@router.delete(
+    "/alerts/{alert_id}",
+    summary="Soft-delete one detection alert from dashboard views",
+)
+async def alert_delete(alert_id: str):
+    deleted = notif.delete_alert(alert_id)
+    if deleted is None:
+        raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
+    return deleted
+
+
 @router.get(
     "/alerts/{alert_id}",
     summary="Fetch a single detection alert by id (with bbox list)",

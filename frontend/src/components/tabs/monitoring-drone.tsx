@@ -11,6 +11,7 @@ import {
   RefreshCw,
   ShieldAlert,
   Square,
+  Trash2,
   Wand2,
   Webcam,
 } from "lucide-react";
@@ -40,7 +41,7 @@ import { cn } from "@/lib/utils";
  *   - detection layer (/monitoring/*) is strictly separate from prediction
  *   - three REAL feeds: Drone (MJPEG) / Webcam (Logitech BRIO 100) / PC Camera
  *   - Drone Operational Policy reads /drone/state from the Stacked v3 risk path
- *   - notifications ring buffer polled every 5s
+ *   - notifications list polled every 5s from SQLite-backed alerts
  *
  * Phase 5 improvements:
  *   - Feed state reconciles against backend status before mounting MJPEG
@@ -56,6 +57,21 @@ export function MonitoringDrone() {
     () => api.getMonitoringNotifications(25),
     [],
     5_000,
+  );
+
+  const deleteNotification = useCallback(
+    async (id: string) => {
+      if (!window.confirm("Delete this alert?")) return;
+      try {
+        await api.deleteDetectionAlert(id);
+      } catch {
+        // The refresh below restores server truth if the delete failed.
+      }
+      notifications.refetch();
+    },
+    // deps intentionally omitted; refetch is stable
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
 
   const p = dronePolicy.data;
@@ -209,7 +225,11 @@ export function MonitoringDrone() {
         ) : (
           <ul className="space-y-3 max-h-72 overflow-y-auto pr-1">
             {notifications.data.notifications.map((n) => (
-              <NotificationRow key={n.id} notification={n} />
+              <NotificationRow
+                key={n.id}
+                notification={n}
+                onDelete={() => deleteNotification(n.id)}
+              />
             ))}
           </ul>
         )}
@@ -829,8 +849,10 @@ function EmptyNotifications() {
 
 function NotificationRow({
   notification,
+  onDelete,
 }: {
   notification: MonitoringNotification;
+  onDelete: () => void;
 }) {
   const n = notification;
   const sourceIcon =
@@ -885,6 +907,16 @@ function NotificationRow({
           </span>
         </p>
       </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onDelete}
+        title="Delete"
+        className="h-8 w-8 p-0 shrink-0"
+      >
+        <Trash2 className="h-4 w-4" aria-hidden />
+        <span className="sr-only">Delete</span>
+      </Button>
     </li>
   );
 }

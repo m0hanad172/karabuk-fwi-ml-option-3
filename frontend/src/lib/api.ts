@@ -215,6 +215,8 @@ export interface DetectionAlert extends MonitoringNotification {
   is_read?: number | boolean;
   read?: boolean;
   read_at?: string | null;
+  is_deleted?: number | boolean;
+  deleted_at?: string | null;
 }
 
 export interface DetectionAlertsSummary {
@@ -314,6 +316,11 @@ export const api = {
       `/monitoring/alerts/${alertId}/unread`,
       { method: "POST" },
     ),
+  deleteDetectionAlert: (alertId: string) =>
+    fetchApi<{ id: string; deleted: boolean; deleted_at: string | null }>(
+      `/monitoring/alerts/${alertId}`,
+      { method: "DELETE" },
+    ),
   markAllDetectionAlertsRead: () =>
     fetchApi<{ flipped: number }>(
       "/monitoring/alerts/mark-all-read",
@@ -341,7 +348,7 @@ export const api = {
   // Demo / smoke-test endpoint — appends a synthetic alert through the
   // real persistence path. Useful when no camera/drone hardware is
   // available; alerts tagged source="demo" are easy to filter or
-  // remove from the JSONL file later.
+  // soft-delete from normal dashboard views later.
   createTestDetectionAlert: (
     label: "fire" | "smoke" = "fire",
     confidence = 0.78,

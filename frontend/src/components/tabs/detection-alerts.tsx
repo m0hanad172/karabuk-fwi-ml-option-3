@@ -13,6 +13,7 @@ import {
   Mail,
   Plane,
   RefreshCw,
+  Trash2,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -35,12 +36,13 @@ import { api, snapshotUrl, type DetectionAlert } from "@/lib/api";
 /**
  * Detection Alerts — operational evidence centre.
  *
- * This tab is strictly a read-only view of the durable fire-detection
+ * This tab is the durable fire-detection
  * evidence log (`/monitoring/alerts*`). It shares absolutely nothing
  * with the Stacked v3 prediction pipeline — no run_history writes, no
  * influence on predicted_fwi, no drone launch policy. Detection alerts
- * are a monitoring-side observation, and this tab exists only to make
- * them auditable and browsable.
+ * are a monitoring-side observation, and this tab exists to make them
+ * auditable, browsable, and removable from normal dashboard views via
+ * SQLite soft delete.
  *
  * Data model recap:
  *  - alerts live in SQLite table `detection_alerts`
@@ -128,6 +130,20 @@ export function DetectionAlerts() {
     setMarkingAll(false);
     refetchAll();
   }, [refetchAll]);
+
+  const deleteOne = useCallback(
+    async (id: string) => {
+      if (!window.confirm("Delete this alert?")) return;
+      try {
+        await api.deleteDetectionAlert(id);
+        if (selectedId === id) setSelectedId(null);
+      } catch {
+        // The refresh below restores server truth if the delete failed.
+      }
+      refetchAll();
+    },
+    [refetchAll, selectedId],
+  );
 
   const rows = alerts.data?.alerts ?? [];
   const summaryData = summary.data;
@@ -426,7 +442,7 @@ export function DetectionAlerts() {
                     <TableHead className="text-right w-[12rem]">
                       Max confidence
                     </TableHead>
-                    <TableHead className="w-10" aria-label="Mark as read" />
+                    <TableHead className="w-20" aria-label="Actions" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -442,6 +458,7 @@ export function DetectionAlerts() {
                       }}
                       onMarkRead={() => markOneRead(alert.id)}
                       onMarkUnread={() => markOneUnread(alert.id)}
+                      onDelete={() => deleteOne(alert.id)}
                     />
                   ))}
                 </TableBody>
@@ -610,11 +627,13 @@ function AlertRow({
   onOpen,
   onMarkRead,
   onMarkUnread,
+  onDelete,
 }: {
   alert: DetectionAlert;
   onOpen: () => void;
   onMarkRead: () => void;
   onMarkUnread: () => void;
+  onDelete: () => void;
 }) {
   const confidencePct = Math.max(0, Math.min(alert.max_confidence, 1));
   const accent =
@@ -689,29 +708,41 @@ function AlertRow({
         onClick={(e) => e.stopPropagation()}
         className="text-right"
       >
-        {unread ? (
+        <div className="flex justify-end gap-1">
+          {unread ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onMarkRead}
+              title="Mark as read"
+              className="h-8 w-8 p-0"
+            >
+              <CheckCheck className="h-4 w-4" aria-hidden />
+              <span className="sr-only">Mark as read</span>
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onMarkUnread}
+              title="Mark as unread"
+              className="h-8 w-8 p-0"
+            >
+              <Mail className="h-4 w-4" aria-hidden />
+              <span className="sr-only">Mark as unread</span>
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
-            onClick={onMarkRead}
-            title="Mark as read"
+            onClick={onDelete}
+            title="Delete"
             className="h-8 w-8 p-0"
           >
-            <CheckCheck className="h-4 w-4" aria-hidden />
-            <span className="sr-only">Mark as read</span>
+            <Trash2 className="h-4 w-4" aria-hidden />
+            <span className="sr-only">Delete</span>
           </Button>
-        ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onMarkUnread}
-            title="Mark as unread"
-            className="h-8 w-8 p-0"
-          >
-            <Mail className="h-4 w-4" aria-hidden />
-            <span className="sr-only">Mark as unread</span>
-          </Button>
-        )}
+        </div>
       </TableCell>
     </TableRow>
   );

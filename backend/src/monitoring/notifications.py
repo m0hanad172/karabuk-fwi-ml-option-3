@@ -15,8 +15,9 @@ Two-tier storage
 2. **SQLite ``detection_alerts`` table** — durable read/write store
    for the Detection Alerts tab. Replaces the previous JSONL +
    sidecar JSON design. Carries id, timestamp, label, confidence,
-   source, snapshot path, ``is_read`` flag, ``read_at``, the full
-   per-detection list, and a raw payload column for forensic use.
+   source, snapshot path, ``is_read`` flag, ``read_at``, soft-delete
+   state, the full per-detection list, and a raw payload column for
+   forensic use.
 
 Snapshots themselves remain on disk as JPEG files under
 ``backend/data/notifications/`` and are referenced by ``snapshot_path``
@@ -153,6 +154,8 @@ def _row_to_alert(row: sqlite3.Row) -> dict:
         "is_read": int(row["is_read"] or 0),
         "read": bool(row["is_read"]),
         "read_at": row["read_at"],
+        "is_deleted": int(row["is_deleted"] or 0),
+        "deleted_at": row["deleted_at"],
     }
 
 
@@ -306,6 +309,8 @@ def add_notification(
         "is_read": 0,
         "read": False,
         "read_at": None,
+        "is_deleted": 0,
+        "deleted_at": None,
     }
 
 
@@ -338,10 +343,8 @@ def save_snapshot(source: str, frame_bgr) -> str | None:
 
 
 def get_notifications(limit: int = 50) -> list[dict]:
-    """Return the most recent notifications, newest first."""
-    with _lock:
-        snap = list(_notifications[-limit:])
-    return list(reversed(snap))
+    """Return the most recent non-deleted notifications, newest first."""
+    return [_ring_entry_from_alert(a) for a in list_alerts(limit=limit)]
 
 
 def list_alerts(
@@ -357,7 +360,7 @@ def list_alerts(
       - ``read_filter`` — "all" (default), "unread", "read"
     """
     init_db()
-    where: list[str] = []
+    where: list[str] = ["is_deleted = 0"]
     params: list[object] = []
     if source:
         where.append("source = ?")
@@ -382,13 +385,17 @@ def list_alerts(
     return [_row_to_alert(r) for r in rows]
 
 
-def get_alert_by_id(alert_id: str) -> dict | None:
+def get_alert_by_id(alert_id: str, include_deleted: bool = False) -> dict | None:
     init_db()
     conn = get_connection()
     try:
+        sql = "SELECT * FROM detection_alerts WHERE alert_id = ?"
+        params: tuple[object, ...] = (str(alert_id),)
+        if not include_deleted:
+            sql += " AND is_deleted = 0"
         row = conn.execute(
-            "SELECT * FROM detection_alerts WHERE alert_id = ?",
-            (str(alert_id),),
+            sql,
+            params,
         ).fetchone()
     finally:
         conn.close()
@@ -401,6 +408,7 @@ def latest_alert() -> dict | None:
     try:
         row = conn.execute(
             "SELECT * FROM detection_alerts "
+            "WHERE is_deleted = 0 "
             "ORDER BY timestamp_epoch DESC, alert_id DESC LIMIT 1"
         ).fetchone()
     finally:
@@ -414,7 +422,7 @@ def alerts_summary() -> dict:
     conn = get_connection()
     try:
         total = conn.execute(
-            "SELECT COUNT(*) AS n FROM detection_alerts"
+            "SELECT COUNT(*) AS n FROM detection_alerts WHERE is_deleted = 0"
         ).fetchone()["n"]
         if total == 0:
             return {
@@ -429,21 +437,24 @@ def alerts_summary() -> dict:
                 "latest_alert": None,
             }
         by_source_rows = conn.execute(
-            "SELECT source, COUNT(*) AS n FROM detection_alerts GROUP BY source"
+            "SELECT source, COUNT(*) AS n FROM detection_alerts "
+            "WHERE is_deleted = 0 GROUP BY source"
         ).fetchall()
         by_source = {r["source"]: r["n"] for r in by_source_rows}
 
         unread_count = conn.execute(
-            "SELECT COUNT(*) AS n FROM detection_alerts WHERE is_read = 0"
+            "SELECT COUNT(*) AS n FROM detection_alerts "
+            "WHERE is_deleted = 0 AND is_read = 0"
         ).fetchone()["n"]
 
         max_conf_row = conn.execute(
-            "SELECT MAX(confidence) AS m FROM detection_alerts"
+            "SELECT MAX(confidence) AS m FROM detection_alerts WHERE is_deleted = 0"
         ).fetchone()
         max_conf = max_conf_row["m"] or 0.0
 
         last_row = conn.execute(
             "SELECT * FROM detection_alerts "
+            "WHERE is_deleted = 0 "
             "ORDER BY timestamp_epoch DESC, alert_id DESC LIMIT 1"
         ).fetchone()
         last_alert = _row_to_alert(last_row) if last_row else None
@@ -456,7 +467,7 @@ def alerts_summary() -> dict:
         for src in by_source:
             r = conn.execute(
                 "SELECT timestamp_iso FROM detection_alerts "
-                "WHERE source = ? "
+                "WHERE source = ? AND is_deleted = 0 "
                 "ORDER BY timestamp_epoch DESC LIMIT 1",
                 (src,),
             ).fetchone()
@@ -485,7 +496,8 @@ def mark_alert_read(alert_id: str) -> dict | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT alert_id FROM detection_alerts WHERE alert_id = ?",
+            "SELECT alert_id FROM detection_alerts "
+            "WHERE alert_id = ? AND is_deleted = 0",
             (str(alert_id),),
         ).fetchone()
         if row is None:
@@ -507,7 +519,8 @@ def mark_alert_unread(alert_id: str) -> dict | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT alert_id FROM detection_alerts WHERE alert_id = ?",
+            "SELECT alert_id FROM detection_alerts "
+            "WHERE alert_id = ? AND is_deleted = 0",
             (str(alert_id),),
         ).fetchone()
         if row is None:
@@ -530,13 +543,54 @@ def mark_all_alerts_read() -> int:
     try:
         cur = conn.execute(
             "UPDATE detection_alerts SET is_read = 1, read_at = ? "
-            "WHERE is_read = 0",
+            "WHERE is_read = 0 AND is_deleted = 0",
             (istanbul_now().isoformat(),),
         )
         conn.commit()
         return cur.rowcount or 0
     finally:
         conn.close()
+
+
+def delete_alert(alert_id: str) -> dict | None:
+    """Soft-delete a detection alert from normal dashboard views.
+
+    The SQLite row and snapshot path are kept as evidence. Repeating the
+    delete call is safe and preserves the first deletion timestamp.
+    """
+    init_db()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT alert_id FROM detection_alerts WHERE alert_id = ?",
+            (str(alert_id),),
+        ).fetchone()
+        if row is None:
+            return None
+        conn.execute(
+            "UPDATE detection_alerts "
+            "SET is_deleted = 1, deleted_at = COALESCE(deleted_at, ?) "
+            "WHERE alert_id = ?",
+            (istanbul_now().isoformat(), str(alert_id)),
+        )
+        conn.commit()
+        deleted_row = conn.execute(
+            "SELECT deleted_at FROM detection_alerts WHERE alert_id = ?",
+            (str(alert_id),),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    with _lock:
+        _notifications[:] = [
+            n for n in _notifications if str(n.get("id")) != str(alert_id)
+        ]
+
+    return {
+        "id": str(alert_id),
+        "deleted": True,
+        "deleted_at": deleted_row["deleted_at"] if deleted_row else None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -760,6 +814,7 @@ def hydrate_ring_buffer_from_log(limit: int = _MAX_NOTIFICATIONS) -> int:
     try:
         rows = conn.execute(
             "SELECT * FROM detection_alerts "
+            "WHERE is_deleted = 0 "
             "ORDER BY timestamp_epoch ASC LIMIT ?",
             (limit,),
         ).fetchall()
