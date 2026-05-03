@@ -1,9 +1,8 @@
 # Deployment Plan
 
-The official runtime for this project is **Local Hardware Mode**: the
-backend runs directly on the Windows host (or any machine with USB
-camera + Tello drone access) and the dashboard runs alongside it. See
-[`README.md`](../README.md) for the day-to-day commands.
+The current prototype runs locally so the backend can access local
+camera/video inputs, while remaining drone-ready for a future camera stream.
+See [`README.md`](../README.md) for the day-to-day commands.
 
 This document is the deferred container / cloud roadmap — written
 once, kept short, and revisited only if the project's hardware
@@ -28,7 +27,7 @@ match the day-to-day demo workflow we want for this project.
 
 For that reason the project ships **no Dockerfiles, no
 `docker-compose.yml`, and no Docker step in CI.** Every active
-runtime command in the README and `docs/RUN_PROJECT.md` is direct:
+runtime command in the README and `docs/INSTALLATION.md` is direct:
 `python backend/scripts/serve.py`, `npm run dev`, the smoke check,
 the cleanup script.
 

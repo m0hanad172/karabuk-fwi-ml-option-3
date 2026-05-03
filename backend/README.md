@@ -44,11 +44,10 @@ backend/
 └── README.md
 ```
 
-The official runtime is **Local Hardware Mode** (see the root
-[`README.md`](../README.md)). The backend runs directly on the
-Windows host so OpenCV / DSHOW can reach the live webcam, PC camera,
-and Tello drone — there is no Docker / cloud image in the active
-workflow.
+The current prototype runs locally so OpenCV can reach local camera/video
+inputs. The project is drone-ready: when drone hardware is available, its
+camera stream can be configured as an input source without changing the core
+detection and alerting pipeline.
 
 `src.*` and `configs.*` are imported as **absolute** paths everywhere —
 no relative imports inside the package. `pytest.ini` sets
@@ -150,7 +149,7 @@ Per-artefact reference: [`models/README.md`](./models/README.md).
 - **Schema bootstrapping:** `init_db()` in `src/api/db/database.py`
   runs `CREATE TABLE IF NOT EXISTS …` on every boot. There is no
   migration framework — schema changes are additive only. See
-  [`../docs/SQLITE_GUIDE.md`](../docs/SQLITE_GUIDE.md).
+  [`../docs/DATABASE.md`](../docs/DATABASE.md).
 
 The detection layer never writes to `run_history` or `system_state` —
 that boundary is enforced by code review, not by a constraint.

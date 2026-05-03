@@ -78,10 +78,10 @@ Health check: <http://localhost:8000/system/health>
 If the backend is unreachable, every tab renders an `ErrorAlert` with
 the underlying fetch error — that is intentional, not a frontend bug.
 
-The official runtime is **Local Hardware Mode**: the backend runs
-directly on the Windows host so OpenCV / DSHOW can reach the live
-webcam, PC camera, and Tello drone. There is no Docker path in the
-active workflow.
+The current prototype expects the backend to run locally so OpenCV can reach a
+local camera/video input. The system is drone-ready: a future drone camera
+stream can be configured as an input source without changing the core detection
+and alerting pipeline.
 
 ## Monitoring tab
 

@@ -1,185 +1,118 @@
 # Architecture
 
-A high-level reference for how the Karabük FWI Stacked v3 system is
-put together. Operational invariants and rules-of-the-road live in
-[`CORE_IDEA.md`](./CORE_IDEA.md); this document focuses on the
-*structure* of the system.
+FireWatch is organized as a simple end-to-end wildfire monitoring prototype.
+The main runtime is a FastAPI backend, a React dashboard, trained ML artifacts,
+a fire/smoke detection module, and a SQLite database.
 
-## High-level diagram
+## System Overview
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                          Next.js dashboard                           │
-│  Overview · Impact · Risk Decision · Features · Analytics ·          │
-│  Run History · Monitoring · System                                   │
-└──────────────────────┬───────────────────────────────────────────────┘
-                       │  HTTP (NEXT_PUBLIC_API_URL)
-                       ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                       FastAPI backend (port 8000)                    │
-│                                                                      │
-│  Routes:  /risk  /weather  /history  /system  /drone  /monitoring    │
-│                                                                      │
-│  ┌─────────────────────────┐    ┌────────────────────────────────┐  │
-│  │  Prediction pipeline    │    │  Monitoring (detection) layer  │  │
-│  │  src/features           │    │  src/monitoring                │  │
-│  │  src/inference          │    │   - cameras (OpenCV)           │  │
-│  │  src/pipeline           │    │   - drone (djitellopy)         │  │
-│  │  src/models/decision    │    │   - YOLO detector              │  │
-│  │  src/api/routes/risk    │    │   - notifications ring buffer  │  │
-│  └────────────┬────────────┘    └───────────────┬────────────────┘  │
-│               │ writes                          │ writes             │
-│               ▼                                 ▼                     │
-│  ┌─────────────────────────┐    ┌────────────────────────────────┐  │
-│  │   SQLite                │    │   data/notifications/          │  │
-│  │   - run_history         │    │   - alerts.jsonl               │  │
-│  │   - system_state        │    │   - <ts>.jpg evidence frames   │  │
-│  └─────────────────────────┘    └────────────────────────────────┘  │
-│                                                                      │
-│  APScheduler — Europe/Istanbul                                       │
-│   - 11:00 scheduled_morning_run  ┐                                   │
-│   - 15:00 scheduled_afternoon_run│ → run_operational_check()         │
-└──────────────────────────────────┼───────────────────────────────────┘
-                                   │
-                                   ▼
-                       Open-Meteo + soil-moisture APIs
-```
+The system has two main flows:
 
-## The two-stage stacked model
+1. Wildfire risk prediction from weather and FWI-related features.
+2. Fire/smoke detection from a local camera or video stream, with future drone
+   camera input supported by configuration.
 
-```
-34 engineered features (Group A/B/C, see src/features/feature_schema.py)
-                  │
-                  ▼
-┌─────────────────────────────────────────┐
-│  Stage 1                                 │
-│  HistGradientBoostingRegressor          │
-│  models/stage1/histgb_regressor.joblib  │
-│  → predicted_fwi (continuous)            │
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────┐
-│  Stage 2                                 │
-│  RandomForestClassifier                 │
-│  models/stage2/rf_classifier_stacked.   │
-│         joblib                           │
-│  inputs:                                 │
-│    [predicted_fwi, rh, ws, fuel_drying] │
-│  → high_risk_probability ∈ [0, 1]        │
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────┐
-│  Stacked decision rule                   │
-│  src/models/decision.stacked_decision    │
-│                                          │
-│  IF predicted_fwi >= 35  → HIGH RISK     │
-│  ELSE IF predicted_fwi >= 28 AND         │
-│       prob >= 0.10        → HIGH RISK    │
-│              (grey-zone rescue)          │
-│  ELSE                     → not high     │
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-        high_risk_flag, decision_reason, drone_state
-```
+These flows meet in the dashboard and database, but they should stay logically
+separate. Prediction results are stored in `run_history`; detection evidence is
+stored in `detection_alerts`.
 
-Thresholds live in `backend/configs/settings.py`:
-`CLASS_THRESHOLD = 35`, `NEAR_THRESHOLD = 28`,
-`DEFAULT_PROBABILITY_THRESHOLD = 0.10`.
+## Clean Architecture Layers
 
-The Stage 2 probability threshold is overridden at load time by the
-value persisted in `models/metadata/stage2_metadata.json` (currently
-`0.10` — the same as the default).
+| Layer | Location | Responsibility |
+|---|---|---|
+| Data source | `backend/src/data/` | Weather and supporting data collection |
+| Feature engineering | `backend/src/features/` | Build and validate model input features |
+| ML prediction | `backend/src/inference/`, `backend/src/models/` | Load model artifacts and run predictions |
+| Risk decision | `backend/src/models/decision.py`, `backend/src/pipeline/` | Convert FWI/probability into high-risk decisions |
+| Fire/smoke detection | `backend/src/monitoring/` | Camera streams, YOLO detection, alert creation |
+| API/backend | `backend/src/api/` | FastAPI routes, scheduler, services, runtime config |
+| Persistence | `backend/src/api/db/`, `backend/outputs/karabuk_fwi.db` | SQLite schema and queries |
+| Frontend/dashboard | `frontend/` | Operator dashboard and visual workflows |
+| Tests | `backend/tests/` | Unit/API/architecture checks |
+| Documentation | `docs/` | Final report support, setup, database, diagrams |
 
-## Why the boundary between prediction and monitoring is strict
+This is a clean and understandable structure for a final-year project. It is
+not over-engineered: modules are separated by responsibility, but the project
+still remains easy to run locally.
 
-The prediction pipeline must remain reproducible from the dataset
-alone. The monitoring layer depends on hardware (USB cameras, the
-Tello drone) that is not available in CI, in tests, or on a fresh
-clone. Mixing the two would mean every prediction unit-test has to
-mock out OpenCV / YOLO / djitellopy.
+## Backend and Frontend Separation
 
-Concretely:
+The backend owns data processing, ML inference, detection, persistence, and
+API responses. The frontend is a dashboard client that calls the backend and
+renders the result. It should not duplicate prediction logic or maintain a
+separate source of truth.
 
-- The detection layer **never** writes `predicted_fwi`,
-  `high_risk_probability`, or `high_risk_flag`.
-- The detection layer **never** writes a row into `run_history` or
-  `system_state` (it writes to its own ring buffer + JSONL log).
-- The prediction layer **never** reads the detection ring buffer.
-- The drone-launch policy is computed from the **latest operational
-  prediction**, not from anything the detection layer produces.
+## Prediction Flow
 
-## Run-type taxonomy
+1. Fetch or prepare weather/FWI-related input data.
+2. Build engineered features.
+3. Validate feature completeness.
+4. Run the Stage 1 FWI regression model.
+5. Run the Stage 2 high-risk classifier.
+6. Apply risk decision thresholds.
+7. Store the run in `run_history`.
+8. Display the result in the dashboard.
 
-`src/api/run_types.py` defines five `run_type` values:
+## Detection and Alert Flow
 
-- `scheduled` — written by APScheduler at 11:00 / 15:00.
-- `manual` — written by `POST /risk/check`.
-- `evaluation` — written by walk-forward evaluation; never surfaces
-  operationally.
-- `test` — written by tests; never surfaces operationally.
-- `legacy_*` — pre-fix rows preserved for the audit log.
+1. Open a local camera/video stream.
+2. Run fire/smoke detection on frames.
+3. Create an alert when detection conditions are met.
+4. Store alert metadata in `detection_alerts`.
+5. Store or reference snapshot evidence when available.
+6. Display alerts in the dashboard.
+7. Allow the operator to mark alerts as read/unread.
 
-The Overview card, the Risk Decision tab's "latest" view, and the
-drone policy strip all filter to the *operational* run types
-(`scheduled`, `manual`).
+## Drone-Ready Design
 
-## Data flow per operational run
+The system is designed as a drone-ready monitoring platform. In the current
+prototype, the fire/smoke detection module operates using a local camera or
+video stream. Once a drone is available, its camera stream can be configured as
+an input source without changing the core detection and alerting pipeline.
 
-```
-run_operational_check()      [src/pipeline/live_inference.py]
-        │
-        ├─ fetch_model_input_for_date()    Open-Meteo + soil-moisture
-        ├─ build_history_window()          last N days for derived features
-        ├─ build_feature_row_from_raw_inputs()
-        ├─ validate_feature_row()          missing / NaN check
-        ├─ predict_from_features()         StackedPredictor
-        ├─ compute_drone_state()
-        └─ save_run()                      INSERT INTO run_history
-```
+This keeps the current prototype honest while still showing how the system can
+be extended to drone hardware.
 
-Every step that emits a timestamp routes through
-`src/api/time_utils.istanbul_now_iso()` so the audit log is always
-TZ-aware.
+## Database Role
 
-## Frontend data flow
+SQLite is the runtime persistence layer. It stores:
 
-The frontend is a thin renderer — it has no second source of truth.
-Every dashboard tile fetches its own data from the backend:
+- Prediction and decision history in `run_history`.
+- Current or latest system state in `system_state`.
+- Fire/smoke detection alerts in `detection_alerts`.
 
-| Tab | Endpoint(s) |
-|---|---|
-| Overview | `/risk/latest`, `/system/scheduler`, `/system/health`, `/weather/live` |
-| Impact & Context | (static markdown / images) |
-| Risk Decision | `/risk/latest`, `/risk/check` (POST) |
-| Features | `/risk/latest` (full audit payload) |
-| Analytics | `/history` |
-| Run History | `/history`, `/history/{run_id}` |
-| Monitoring | `/monitoring/...`, `/drone/state` |
-| System | `/system/model`, `/system/health`, `/system/scheduler` |
+There are no enforced SQLite foreign keys between these tables. Relationships
+are operational and logical: the dashboard reads from all three areas, but
+prediction and detection write paths remain separate.
 
-All polling is done by the `useApi` hook in
-`frontend/src/hooks/use-api.ts`, which is timezone-naive — it just
-forwards the backend's TZ-aware ISO strings. The
-`Europe/Istanbul`-aware rendering happens at the leaf component level
-via `frontend/src/lib/time.ts`.
+## Strengths
 
-## Why the backend is at `backend/` (post-restructure)
+- End-to-end pipeline from data input to dashboard display.
+- Clear backend/frontend split.
+- Separate ML prediction and detection modules.
+- Durable SQLite storage for demo and reporting.
+- Practical API coverage for collaborators.
+- Drone-ready wording and design without overstating hardware status.
 
-Earlier in the project, `src/`, `configs/`, etc. lived at the repo
-root. The folder restructure moves them into `backend/` so the top
-level cleanly separates *backend* / *frontend* / *docs* / *deployment*
-artefacts.
+## Limitations and Future Improvements
 
-This was safe because every Python entry point — `scripts/serve.py`,
-`scripts/train.py`, the pytest `conftest.py`, the migration script —
-computes its sys.path anchor as
-`Path(__file__).resolve().parent.parent`. After the move, that
-expression resolves to `backend/`, which is the new Python project
-root containing `src/`, `configs/`, `models/`, `data/`. No import
-strings needed to change.
+- Drone hardware is not currently connected.
+- Current detection input is local camera/video stream.
+- SQLite is suitable for prototype/demo use, but a larger deployment should
+  consider PostgreSQL or another managed database.
+- Frontend lint currently reports existing React hook issues.
+- Test execution depends on local filesystem permissions for temporary SQLite
+  files.
+- Future work can improve model validation, add production deployment docs,
+  improve alert review workflows, and add more visual QA screenshots.
 
-`backend/pytest.ini` sets `pythonpath = .` so `python -m pytest
-backend/tests` from the repo root works without a sys.path hack.
+## Risky Areas
+
+Changes in these areas should be reviewed before editing:
+
+- Model artifacts and thresholds.
+- API request/response contracts.
+- SQLite schema and migrations.
+- Backend import paths and project structure.
+- Detection runtime behavior.
+- Frontend dashboard behavior.
