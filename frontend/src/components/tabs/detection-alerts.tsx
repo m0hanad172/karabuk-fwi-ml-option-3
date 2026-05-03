@@ -436,6 +436,9 @@ export function DetectionAlerts() {
                       alert={alert}
                       onOpen={() => {
                         setSelectedId(alert.id);
+                        if (!isAlertRead(alert)) {
+                          void markOneRead(alert.id);
+                        }
                       }}
                       onMarkRead={() => markOneRead(alert.id)}
                       onMarkUnread={() => markOneUnread(alert.id)}
@@ -620,7 +623,7 @@ function AlertRow({
       : confidencePct >= 0.5
         ? "var(--warning)"
         : "var(--success)";
-  const unread = !alert.read;
+  const unread = !isAlertRead(alert);
 
   return (
     <TableRow
@@ -845,6 +848,12 @@ function sourceLabel(source: string): string {
     default:
       return source;
   }
+}
+
+function isAlertRead(alert: DetectionAlert): boolean {
+  if (typeof alert.is_read === "boolean") return alert.is_read;
+  if (typeof alert.is_read === "number") return alert.is_read !== 0;
+  return alert.read === true;
 }
 
 function sourceMeta(source: string): { icon: React.ReactNode; tone: string } {

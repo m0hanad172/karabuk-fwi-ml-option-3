@@ -87,8 +87,6 @@ CREATE TABLE IF NOT EXISTS detection_alerts (
 
 CREATE INDEX IF NOT EXISTS idx_detection_alerts_ts
     ON detection_alerts (timestamp_epoch DESC);
-CREATE INDEX IF NOT EXISTS idx_detection_alerts_unread
-    ON detection_alerts (is_read, timestamp_epoch DESC);
 """
 
 
@@ -103,8 +101,35 @@ def get_connection() -> sqlite3.Connection:
 
 def init_db():
     conn = get_connection()
-    conn.executescript(_CREATE_TABLES)
-    conn.close()
+    try:
+        conn.executescript(_CREATE_TABLES)
+        _ensure_detection_alert_read_columns(conn)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_detection_alerts_unread "
+            "ON detection_alerts (is_read, timestamp_epoch DESC)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _ensure_detection_alert_read_columns(conn: sqlite3.Connection) -> None:
+    """Add read-state columns for older SQLite alert tables.
+
+    The current schema already includes these columns. This migration is
+    intentionally additive so existing alert rows and evidence are preserved.
+    """
+    cols = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(detection_alerts)").fetchall()
+    }
+    if "is_read" not in cols:
+        conn.execute(
+            "ALTER TABLE detection_alerts "
+            "ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0"
+        )
+    if "read_at" not in cols:
+        conn.execute("ALTER TABLE detection_alerts ADD COLUMN read_at TEXT")
 
 
 def save_run(run_result: dict):

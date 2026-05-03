@@ -156,3 +156,7 @@ Example:
 ```powershell
 curl "http://localhost:8000/monitoring/alerts?limit=10&filter=unread"
 ```
+
+Alert responses include `is_read`, `read`, and `read_at`. Calling
+`POST /monitoring/alerts/{alert_id}/read` is idempotent and persists the read
+state in SQLite.

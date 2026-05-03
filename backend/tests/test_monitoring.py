@@ -454,6 +454,7 @@ class TestDetectionAlertsReadState:
         notif.clear_notifications()
         a = client.post("/monitoring/alerts/test").json()
         assert a["read"] is False
+        assert a["is_read"] == 0
         assert a["read_at"] is None
 
     def test_summary_reports_unread_and_read_counts(self, client):
@@ -471,6 +472,7 @@ class TestDetectionAlertsReadState:
         r = client.post(f"/monitoring/alerts/{a1['id']}/read")
         assert r.status_code == 200
         assert r.json()["read"] is True
+        assert r.json()["is_read"] == 1
         s2 = client.get("/monitoring/alerts/summary").json()
         assert s2["unread_count"] == 2
         assert s2["read_count"] == 1
@@ -520,6 +522,17 @@ class TestDetectionAlertsReadState:
         r = client.post("/monitoring/alerts/does-not-exist/read")
         assert r.status_code == 404
 
+    def test_mark_read_is_idempotent(self, client):
+        notif.clear_notifications()
+        a = client.post("/monitoring/alerts/test").json()
+        first = client.post(f"/monitoring/alerts/{a['id']}/read")
+        second = client.post(f"/monitoring/alerts/{a['id']}/read")
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["read"] is True
+        assert second.json()["read"] is True
+        assert first.json()["read_at"] == second.json()["read_at"]
+
     def test_read_state_persists_across_module_lookups(self, client):
         # Simulates a backend restart: the in-memory ring buffer can be
         # empty, and the API still answers correctly because it reads
@@ -527,13 +540,34 @@ class TestDetectionAlertsReadState:
         notif.clear_notifications()
         a = client.post("/monitoring/alerts/test").json()
         client.post(f"/monitoring/alerts/{a['id']}/read")
-        # Force an in-memory wipe — the sidecar file is the source of truth.
+        # Force an in-memory wipe; SQLite remains the source of truth.
         notif._notifications.clear()
         s = client.get("/monitoring/alerts/summary").json()
         assert s["read_count"] == 1
         again = client.get(f"/monitoring/alerts/{a['id']}").json()
         assert again["read"] is True
+        assert again["is_read"] == 1
         assert again["read_at"]
+
+    def test_read_state_survives_new_db_connection(self, client):
+        from src.api.db.database import get_connection
+
+        notif.clear_notifications()
+        a = client.post("/monitoring/alerts/test").json()
+        client.post(f"/monitoring/alerts/{a['id']}/read")
+
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT is_read, read_at FROM detection_alerts WHERE alert_id = ?",
+                (a["id"],),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        assert row is not None
+        assert row["is_read"] == 1
+        assert row["read_at"]
 
     def test_snapshot_status_reports_missing_and_ready(self, client):
         notif.clear_notifications()
@@ -574,6 +608,7 @@ class TestDetectionAlertsReadState:
         assert notif.import_legacy_jsonl() == 1
         alert = client.get("/monitoring/alerts/legacy-1").json()
         assert alert["read"] is False
+        assert alert["is_read"] == 0
         assert alert["read_at"] is None
 
 

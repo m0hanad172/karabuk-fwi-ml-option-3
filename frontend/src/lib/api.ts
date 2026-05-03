@@ -212,6 +212,7 @@ export interface DetectionAlert extends MonitoringNotification {
   snapshot_version?: number | null;
   // SQLite read-state fields. Older payloads may not carry these;
   // treat missing fields as "unread".
+  is_read?: number | boolean;
   read?: boolean;
   read_at?: string | null;
 }

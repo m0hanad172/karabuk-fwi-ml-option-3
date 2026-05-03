@@ -150,6 +150,7 @@ def _row_to_alert(row: sqlite3.Row) -> dict:
         "message": row["message"],
         "camera_id": row["camera_id"],
         "detections": detections,
+        "is_read": int(row["is_read"] or 0),
         "read": bool(row["is_read"]),
         "read_at": row["read_at"],
     }
@@ -302,6 +303,7 @@ def add_notification(
         "severity": _severity_for(label, max_conf),
         "camera_id": source,
         "message": f"{label} detected on {source} at {max_conf*100:.1f}% confidence",
+        "is_read": 0,
         "read": False,
         "read_at": None,
     }
@@ -489,7 +491,9 @@ def mark_alert_read(alert_id: str) -> dict | None:
         if row is None:
             return None
         conn.execute(
-            "UPDATE detection_alerts SET is_read = 1, read_at = ? WHERE alert_id = ?",
+            "UPDATE detection_alerts "
+            "SET is_read = 1, read_at = COALESCE(read_at, ?) "
+            "WHERE alert_id = ?",
             (istanbul_now().isoformat(), str(alert_id)),
         )
         conn.commit()

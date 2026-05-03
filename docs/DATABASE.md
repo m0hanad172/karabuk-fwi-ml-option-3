@@ -71,6 +71,10 @@ This table is independent from `run_history`. Detection alerts are operationally
 related to the monitoring workflow, but SQLite does not enforce a foreign key
 relationship between prediction runs and detection alerts.
 
+Read/unread state is stored in SQLite using `is_read` and `read_at`. New alerts
+start unread. When an operator opens or marks an alert as read, the backend
+updates these columns so the state survives refreshes and backend restarts.
+
 ## Test and Probe Databases
 
 The following zero-byte probe/test databases are not part of the final runtime
