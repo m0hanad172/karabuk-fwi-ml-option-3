@@ -1,12 +1,12 @@
 """
 Scheduler service for automatic risk checks.
 
-Runs at configured hours (default 11:00 and 15:00 Istanbul time). Both
+Runs at configured hours (default 09:00, 11:00, and 15:00 Istanbul time). All
 jobs are OPERATIONAL — they use run_type="scheduled" and are allowed to
 trigger the drone policy.
 
-The two-run-a-day design (morning + afternoon) is the operational contract
-exposed on the dashboard. Both jobs are always registered so the Live
+The scheduled-check design is the operational contract
+exposed on the dashboard. All jobs are always registered so the Live
 Overview / Scheduler card can always show them.
 """
 from __future__ import annotations
@@ -53,10 +53,9 @@ def start_scheduler():
     # with the explicit CronTrigger timezone below.
     _scheduler = BackgroundScheduler(timezone=ISTANBUL_TZ)
 
-    # Operational contract: two daily runs at SCHEDULED_RUN_HOURS (default 11, 15).
-    # Both are always registered so the dashboard always shows both slots.
-    slot_names = {0: "morning", 1: "afternoon"}
-    for idx, hour in enumerate(SCHEDULED_RUN_HOURS[:2]):
+    # Operational contract: register every configured daily risk-check slot.
+    slot_names = {0: "early_morning", 1: "morning", 2: "afternoon"}
+    for idx, hour in enumerate(SCHEDULED_RUN_HOURS):
         slot = slot_names.get(idx, f"slot{idx}")
         _scheduler.add_job(
             _scheduled_run,
@@ -69,8 +68,8 @@ def start_scheduler():
 
     _scheduler.start()
     logger.info(
-        f"Scheduler started with {len(SCHEDULED_RUN_HOURS[:2])} operational slots: "
-        f"{SCHEDULED_RUN_HOURS[:2]}"
+        f"Scheduler started with {len(SCHEDULED_RUN_HOURS)} operational slots: "
+        f"{SCHEDULED_RUN_HOURS}"
     )
 
 
