@@ -15,9 +15,36 @@ Current table counts from the active database:
 
 | Table | Rows |
 |---|---:|
-| `detection_alerts` | 13 |
-| `run_history` | 30 |
+| `detection_alerts` | 19 |
+| `run_history` | 31 |
 | `system_state` | 2 |
+
+## Runtime Data Warning
+
+`backend/outputs/karabuk_fwi.db` is runtime/demo data. Alert read state,
+soft-deleted alerts, manual risk checks, scheduled risk checks, and dashboard
+history can change while the system is used.
+
+Do not run `git restore -- backend/outputs/karabuk_fwi.db` unless you
+intentionally want to reset the local demo database back to the committed
+baseline. Before any reset, keep a local backup:
+
+```powershell
+Copy-Item backend\outputs\karabuk_fwi.db backend\outputs\karabuk_fwi.local.backup.db
+```
+
+On a personal demo machine, it is reasonable to mark the runtime database as a
+local-only working copy:
+
+```powershell
+git update-index --skip-worktree backend/outputs/karabuk_fwi.db
+```
+
+Use this only for local demo data. To make Git track the file normally again:
+
+```powershell
+git update-index --no-skip-worktree backend/outputs/karabuk_fwi.db
+```
 
 ## Why SQLite Is Used
 
