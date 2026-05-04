@@ -39,6 +39,11 @@ FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 
 _HTTP_TIMEOUT = 15
 
+# Daily aggregate inputs only. These variables must match the training CSV
+# semantics: daily max temperature, daily min RH, daily max wind, daily
+# precipitation sum, mean cloud cover, solar radiation sum, ET0, and daily
+# soil moisture mean. Do not replace them with current-hour weather
+# variables unless the model is retrained.
 DAILY_MODEL_INPUT_VARS = [
     "temperature_2m_max",
     "relative_humidity_2m_min",
