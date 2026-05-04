@@ -14,8 +14,9 @@ prediction and fire/smoke detection system.
 ### 2. Problem Definition
 
 Describe the need to combine weather-based risk prediction with visual
-fire/smoke monitoring. State that the current prototype uses local camera/video
-input and is designed for future drone camera integration.
+fire/smoke monitoring. State that the current prototype is drone-ready and
+operator-controlled: local camera/video input works now, and a Tello stream can
+be configured for a supervised demo.
 
 ### 3. Literature Review
 
@@ -87,11 +88,11 @@ Discuss:
 
 Be specific and honest. Suggested points:
 
-- Drone hardware is not connected — the prototype is **drone-ready**
-  using local camera/video input.
-- The current scheduler runs the 11:00 and 15:00 risk checks;
-  09:00 is in the operational design but not yet in
-  `SCHEDULED_RUN_HOURS`.
+- Drone hardware is optional — the prototype is **drone-ready**
+  and defaults to mock mode.
+- Physical drone movement is operator-controlled. Stream start does not mean
+  takeoff.
+- The current scheduler runs the 09:00, 11:00, and 15:00 risk checks.
 - The 30-minute Drone Patrol Cycle is documented as the operational
   design and partially modelled (`DRONE_INTERVAL_MINUTES`,
   `compute_drone_state`), but the autonomous launch / inspect /
@@ -107,9 +108,10 @@ Be specific and honest. Suggested points:
 
 Summarize what FireWatch achieves. Future work can include:
 
-- Connecting real drone hardware.
-- Wiring the 09:00 scheduled check.
-- Implementing the autonomous Drone Patrol Cycle.
+- Connecting and validating real drone hardware.
+- Implementing the autonomous Drone Patrol Cycle after hardware, SDK,
+  waypoint/GPS, return-to-home, battery telemetry, and safety procedures are
+  ready.
 - Adding the future operational tables (`risk_checks`,
   `patrol_windows`, `drone_missions`, `grid_cells`,
   `stream_sources`).

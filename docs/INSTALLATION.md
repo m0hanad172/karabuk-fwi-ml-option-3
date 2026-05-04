@@ -67,9 +67,8 @@ The operational design runs three scheduled risk checks per day in
 - 11:00
 - 15:00
 
-The current code runs the 11:00 and 15:00 slots
-(`backend/configs/settings.py::SCHEDULED_RUN_HOURS`). Adding 09:00 is
-a one-line settings change. See
+The current code runs the 09:00, 11:00, and 15:00 slots
+(`backend/configs/settings.py::SCHEDULED_RUN_HOURS`). See
 [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full operational logic
 (patrol windows, patrol cycle, CCTV vs drone).
 
@@ -82,6 +81,21 @@ backend/.env
 ```
 
 Use `backend/.env.example` as the template.
+
+Safe drone defaults:
+
+```text
+DRONE_MODE=mock
+DRONE_AUTO_CONNECT=false
+DRONE_VIDEO_ENABLED=true
+DRONE_ALLOW_MANUAL_CONTROL=false
+DRONE_ALLOW_AUTO_TAKEOFF=false
+DRONE_REQUIRE_OPERATOR_CONFIRMATION=true
+```
+
+Use `DRONE_MODE=tello` only for an operator-controlled DJI Tello demo.
+Starting the stream does not take off. Physical launch requires operator
+confirmation and a separate safety check.
 
 Frontend optional environment file:
 

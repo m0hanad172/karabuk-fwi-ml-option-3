@@ -1,0 +1,39 @@
+{
+  "station_id": "station_1",
+  "station_name": "Karabuk Demo Station",
+  "base_location": {
+    "lat": 41.2061,
+    "lon": 32.6204,
+    "notes": "Example base point for presentation planning only."
+  },
+  "grid_cells": [
+    {
+      "id": "cell_a1",
+      "name": "North Ridge",
+      "priority": "high",
+      "center_lat": 41.211,
+      "center_lon": 32.618,
+      "polygon": [
+        [41.212, 32.616],
+        [41.212, 32.620],
+        [41.210, 32.620],
+        [41.210, 32.616]
+      ],
+      "notes": "Future patrol candidate; no waypoint navigation is implemented."
+    },
+    {
+      "id": "cell_b1",
+      "name": "Valley Edge",
+      "priority": "medium",
+      "center_lat": 41.204,
+      "center_lon": 32.625,
+      "polygon": [
+        [41.205, 32.623],
+        [41.205, 32.627],
+        [41.203, 32.627],
+        [41.203, 32.623]
+      ],
+      "notes": "Demo label for operator planning and report diagrams."
+    }
+  ]
+}

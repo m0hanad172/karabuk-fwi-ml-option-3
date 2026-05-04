@@ -113,10 +113,10 @@ never runs overnight.
 | 15:00 high risk | 15:00 | 17:00 (operational cutoff) |
 | Manual high risk | now | next scheduled check or 17:00, whichever sooner |
 
-### Drone Patrol Cycle (within an open window)
+### Drone Patrol Cycle (future production design)
 
-The drone does not fly continuously. While the window is open,
-the system runs a **30-minute patrol cycle**:
+The drone does not fly continuously. In the future production design,
+while the window is open, the system can run a **30-minute patrol cycle**:
 
 1. **Launch** — short patrol over selected priority grid cells.
 2. **Inspect** — fire/smoke detection on the drone/video stream.
@@ -147,12 +147,17 @@ Both share the same fire/smoke detection pipeline; both write into
 `detection_alerts`. The dashboard treats them as different alert
 sources (`source=webcam` / `source=pc_camera` / `source=drone`).
 
-### Drone-ready (not drone-based)
+### Operator-controlled drone-ready prototype
 
-The current prototype reads from a **local camera or video stream**.
-A real drone stream can be plugged in later as another input source
-without changing the detection pipeline, the API contracts, or the
-database schema.
+The current prototype is operator-in-the-loop. FireWatch can run in mock
+drone mode by default, or in Tello mode when explicitly configured. Stream
+start means video input only; it does **not** mean physical takeoff. Physical
+drone movement remains operator-controlled, and launch requires operator
+confirmation.
+
+The old project is used only as a reference for Tello connection, stream
+start/stop, frame reading, MJPEG streaming, and YOLO-on-drone-frame detection.
+FireWatch does not copy the old global-state drone control style.
 
 ## Limitations and Future Improvements
 
@@ -161,16 +166,17 @@ Honest gap between the **operational design above** and the
 
 | Operational design | Current implementation |
 |---|---|
-| 3 scheduled checks at 09:00, 11:00, 15:00 | Code currently runs 11:00 and 15:00 (`SCHEDULED_RUN_HOURS = [11, 15]`). Adding 09:00 is a one-line settings change. |
-| Automated 30-minute patrol cycle | `DRONE_INTERVAL_MINUTES = 30` is defined and `compute_drone_state` returns `next_launch_time`. The full launch / inspect / return / standby orchestration is not yet automated because real drone hardware is not connected. |
+| 3 scheduled checks at 09:00, 11:00, 15:00 | Implemented in `SCHEDULED_RUN_HOURS = [9, 11, 15]`. |
+| Automated 30-minute patrol cycle | `DRONE_INTERVAL_MINUTES = 30` is defined and `compute_drone_state` returns `next_launch_time`. The full launch / inspect / return / standby orchestration remains future work and must not auto-launch real hardware. |
 | 17:00 cutoff for the 15:00 high-risk window | Not yet enforced in code. |
 | Priority grid cells | Modelled in the logical ERD (`docs/diagrams/logical_erd.mmd`), not yet in the SQLite schema. |
 | Manual high-risk check triggers patrol | The `allow_drone_trigger` flag is wired through the API; default is `False` so the operator must opt in. |
 
 Additional limitations:
 
-- Drone hardware is not currently connected.
-- Current detection input is a local camera/video stream.
+- Drone hardware is optional; mock mode is the safe default.
+- Current demo uses local camera/video or operator-controlled drone stream input.
+- Autonomous waypoint/grid patrol is not implemented.
 - SQLite is suitable for prototype/demo use; production deployment
   should consider PostgreSQL.
 

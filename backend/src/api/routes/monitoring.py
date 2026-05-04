@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from src.api.runtime_config import demo_alerts_enabled
+from src.drone.service import DroneSafetyError
 from src.monitoring import cameras as cams
 from src.monitoring import drone as drn
 from src.monitoring import notifications as notif
@@ -158,7 +159,10 @@ async def drone_status():
 
 @router.post("/drone/start", summary="Start the drone feed")
 async def drone_start():
-    return drn.start_drone()
+    try:
+        return drn.start_drone()
+    except DroneSafetyError as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
 
 @router.post("/drone/stop", summary="Stop the drone feed")

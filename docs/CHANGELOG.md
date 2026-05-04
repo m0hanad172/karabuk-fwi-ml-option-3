@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-05-04 - Operator-controlled drone-ready adapter
+
+- Added a mock-first drone adapter layer under `backend/src/drone/`.
+- Prepared a DJI Tello controller for explicit operator-controlled stream demos.
+- Added safe `/drone/*` endpoints for status, connect/disconnect, stream,
+  manual-command gating, emergency stop, and patrol recommendation state.
+- Added `backend/configs/drone_grid.example.json` for station/grid planning
+  labels only; no waypoint navigation or mission tables were added.
+- Updated Monitoring wording: High Risk prepares patrol, but does not
+  auto-launch hardware.
+
 Project-level changelog. Code commits live in `git log`; this file
 captures the milestones in plain English so a reviewer or collaborator
 can read the project's history in one page.
@@ -11,7 +22,7 @@ can read the project's history in one page.
   manual risk checks, the High-Risk Drone Patrol Window, the
   30-minute Drone Patrol Cycle, the 17:00 cutoff for the 15:00 slot,
   and the CCTV-vs-drone roles.
-- **Honest limitations** added: code currently runs the 11:00 and
+- **Honest limitations** added: code runs the 09:00, 11:00, and
   15:00 slots; the 30-minute patrol orchestration is design-only
   (drone hardware not connected); priority grid cells are modelled
   in the logical ERD only.

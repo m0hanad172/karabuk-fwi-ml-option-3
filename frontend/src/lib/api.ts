@@ -174,7 +174,9 @@ export interface AutoDetectResult {
 }
 
 export interface DroneMonitoringStatus {
+  mode?: string;
   running: boolean;
+  stream_active?: boolean;
   connected: boolean;
   battery: number | null;
   last_error: string | null;
@@ -183,6 +185,11 @@ export interface DroneMonitoringStatus {
   capture_fps?: number;
   inference_fps?: number;
   inference_stride?: number;
+  manual_control_enabled?: boolean;
+  auto_takeoff_enabled?: boolean;
+  operator_confirmation_required?: boolean;
+  emergency_stopped?: boolean;
+  station_id?: string;
 }
 
 export interface MonitoringNotification {
@@ -284,6 +291,8 @@ export const api = {
     fetchApi<DroneMonitoringStatus>("/monitoring/drone/start", { method: "POST" }),
   stopDroneMonitoring: () =>
     fetchApi<DroneMonitoringStatus>("/monitoring/drone/stop", { method: "POST" }),
+  emergencyStopDrone: () =>
+    fetchApi<DroneMonitoringStatus>("/drone/emergency-stop", { method: "POST" }),
   getMonitoringNotifications: (limit = 50) =>
     fetchApi<{ notifications: MonitoringNotification[] }>(
       `/monitoring/notifications?limit=${limit}`,

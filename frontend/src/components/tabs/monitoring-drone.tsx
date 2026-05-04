@@ -93,10 +93,10 @@ export function MonitoringDrone() {
           style={{ background: "var(--secondary)" }}
         />
         <span>
-          <span className="font-semibold">Live detection console.</span>{" "}
-          Real-time drone and camera feeds, plus the read-only drone launch
-          policy. For the durable, searchable record of every detection raised,
-          see the <span className="font-medium">Detection Alerts</span> tab.
+          <span className="font-semibold">Drone-ready Prototype.</span>{" "}
+          Current demo uses operator-controlled drone movement. High Risk
+          prepares patrol; it does not auto-launch hardware. For the durable
+          alert record, see the <span className="font-medium">Detection Alerts</span> tab.
         </span>
       </div>
 
@@ -104,14 +104,13 @@ export function MonitoringDrone() {
       <div className="ent-card p-5">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
           <div>
-            <p className="ent-eyebrow">High Risk Trigger</p>
+            <p className="ent-eyebrow">Operator-controlled Demo</p>
             <h3 className="font-display text-lg font-semibold leading-none mt-1 flex items-center gap-2">
               <Plane className="h-4 w-4" style={{ color: "var(--primary)" }} />
-              Drone Patrol Window
+              Drone-ready Prototype
             </h3>
             <p className="text-xs text-muted-foreground mt-1">
-              Opens automatically on a High Risk classification. 30-min
-              patrol cycle while open.
+              Physical drone launch requires operator confirmation.
             </p>
           </div>
           {p && (
@@ -135,8 +134,8 @@ export function MonitoringDrone() {
         {p ? (
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <PolicyTile
-              label="Alert Window"
-              value={p.active_alert_window ? "Active" : "Inactive"}
+              label="Patrol Recommended"
+              value={p.active_alert_window ? "Yes" : "No"}
               tone={p.active_alert_window ? "danger" : "neutral"}
             />
             <PolicyTile
@@ -550,19 +549,39 @@ function DroneFeedCard() {
     }
   }
 
+  async function emergencyStop() {
+    if (!window.confirm("Emergency stop drone?")) return;
+    setBusy(true);
+    try {
+      const s = await api.emergencyStopDrone();
+      setStatus(s);
+      setOptimisticRunning(null);
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const running =
     optimisticRunning !== null ? optimisticRunning : !!status?.running;
   const hwAvailable = status?.hardware_available ?? true;
+  const modeLabel = status?.mode
+    ? status.mode.charAt(0).toUpperCase() + status.mode.slice(1)
+    : "Offline";
 
   return (
     <FeedCard
       title="Drone Camera"
       subtitle={
-        hwAvailable
-          ? status?.battery != null
-            ? `DJI Tello · Battery ${status.battery}%`
-            : "DJI Tello"
-          : "Hardware unavailable"
+        `${modeLabel} mode · ${
+          hwAvailable
+            ? status?.battery != null
+              ? `Battery ${status.battery}%`
+              : "Operator-controlled"
+            : "Hardware unavailable"
+        }`
       }
       icon={<Plane className="h-4 w-4" />}
       feedPath="/monitoring/drone/feed"
@@ -574,6 +593,17 @@ function DroneFeedCard() {
       detectionCount={status?.detection_count ?? 0}
       captureFps={status?.capture_fps}
       inferenceFps={status?.inference_fps}
+      extraAction={
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={emergencyStop}
+          disabled={busy}
+          className="w-full"
+        >
+          Emergency Stop
+        </Button>
+      }
     />
   );
 }
@@ -690,6 +720,7 @@ function FeedCard({
   detectionCount,
   captureFps,
   inferenceFps,
+  extraAction,
 }: {
   title: string;
   subtitle: string;
@@ -703,6 +734,7 @@ function FeedCard({
   detectionCount: number;
   captureFps?: number;
   inferenceFps?: number;
+  extraAction?: React.ReactNode;
 }) {
   // Cache-bust the MJPEG <img> on each start so the browser re-opens the
   // stream instead of reusing a stale connection.
@@ -807,7 +839,7 @@ function FeedCard({
         )}
       </div>
 
-      <div className="mt-auto px-3 pb-3">
+      <div className="mt-auto px-3 pb-3 flex gap-2">
         <Button
           size="sm"
           variant={running ? "outline" : "default"}
@@ -825,6 +857,7 @@ function FeedCard({
             </>
           )}
         </Button>
+        {extraAction}
       </div>
     </div>
   );

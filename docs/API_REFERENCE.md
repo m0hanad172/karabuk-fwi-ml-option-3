@@ -24,7 +24,7 @@ http://localhost:8000/docs
 |---|---|---|
 | GET | `/system/health` | Health status for models and database |
 | GET | `/system/model` | Model names, feature counts, thresholds, and metrics |
-| GET | `/system/scheduler` | Scheduler state and next run information (current slots: 11:00 and 15:00; design adds 09:00) |
+| GET | `/system/scheduler` | Scheduler state and next run information (09:00, 11:00, 15:00 Europe/Istanbul) |
 | GET | `/system/config` | Public runtime flags for the frontend |
 
 Example:
@@ -103,6 +103,15 @@ path.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/drone/state` | Latest drone-ready policy state from risk checks |
+| GET | `/drone/status` | Operator-controlled drone adapter status |
+| POST | `/drone/connect` | Connect configured adapter; mock mode succeeds without hardware |
+| POST | `/drone/disconnect` | Disconnect configured adapter |
+| POST | `/drone/stream/start` | Start drone/video stream; does not take off |
+| POST | `/drone/stream/stop` | Stop drone/video stream |
+| GET | `/drone/feed` | Drone/video MJPEG feed |
+| POST | `/drone/manual-command` | Manual command, blocked unless enabled by config |
+| POST | `/drone/emergency-stop` | Idempotent emergency stop |
+| GET | `/drone/patrol/state` | Patrol recommendation state; no physical launch |
 
 The response carries `active_alert_window` (whether a High Risk
 patrol window is open), `drone_status`
@@ -111,6 +120,10 @@ active), `next_launch_time`, and a human-readable `reason`. The
 current prototype does not require real drone hardware to be
 connected — see the operational logic in
 [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+
+Drone adapter endpoints are operator-controlled. `DRONE_MODE=mock` is the
+default. `DRONE_MODE=tello` prepares DJI Tello stream integration, but physical
+launch still requires operator confirmation and is not automatic.
 
 ## Monitoring and Detection
 

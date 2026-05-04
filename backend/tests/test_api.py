@@ -255,6 +255,117 @@ class TestDroneEndpoint:
         assert "drone_status" in data
 
 
+class TestOperatorDroneLayer:
+    @pytest.fixture(autouse=True)
+    def _reset_drone(self):
+        from src.drone.service import reset_drone_service_for_tests
+
+        reset_drone_service_for_tests()
+        yield
+        reset_drone_service_for_tests()
+
+    def test_app_starts_without_real_drone(self, client):
+        r = client.get("/drone/status")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["mode"] == "mock"
+        assert data["connected"] is False
+        assert data["stream_active"] is False
+
+    def test_mock_connect_disconnect(self, client):
+        connected = client.post("/drone/connect")
+        assert connected.status_code == 200
+        assert connected.json()["connected"] is True
+
+        disconnected = client.post("/drone/disconnect")
+        assert disconnected.status_code == 200
+        assert disconnected.json()["connected"] is False
+
+    def test_mock_start_stop_stream(self, client):
+        started = client.post("/drone/stream/start")
+        assert started.status_code == 200
+        assert started.json()["mode"] == "mock"
+        assert started.json()["stream_active"] is True
+        assert started.json()["connected"] is True
+
+        stopped = client.post("/drone/stream/stop")
+        assert stopped.status_code == 200
+        assert stopped.json()["stream_active"] is False
+
+    def test_manual_command_blocked_when_disabled(self, client):
+        r = client.post("/drone/manual-command", json={"command": "forward"})
+        assert r.status_code == 403
+
+    def test_manual_command_accepted_in_mock_when_enabled(self, client, monkeypatch):
+        from configs import settings
+        from src.drone.service import reset_drone_service_for_tests
+
+        monkeypatch.setattr(settings, "DRONE_ALLOW_MANUAL_CONTROL", True)
+        reset_drone_service_for_tests()
+
+        r = client.post("/drone/manual-command", json={"command": "forward"})
+        assert r.status_code == 200
+        assert r.json()["mode"] == "mock"
+
+    def test_auto_takeoff_requires_extra_safety_flags(self, client, monkeypatch):
+        from configs import settings
+        from src.drone.service import reset_drone_service_for_tests
+
+        monkeypatch.setattr(settings, "DRONE_ALLOW_MANUAL_CONTROL", True)
+        monkeypatch.setattr(settings, "DRONE_ALLOW_AUTO_TAKEOFF", False)
+        reset_drone_service_for_tests()
+
+        r = client.post("/drone/manual-command", json={"command": "takeoff"})
+        assert r.status_code == 403
+
+    def test_tello_controller_not_instantiated_in_mock_mode(self, client, monkeypatch):
+        import sys
+
+        from configs import settings
+        from src.drone.service import reset_drone_service_for_tests
+
+        sys.modules.pop("src.drone.tello_controller", None)
+        monkeypatch.setattr(settings, "DRONE_MODE", "mock")
+        reset_drone_service_for_tests()
+
+        r = client.get("/drone/status")
+        assert r.status_code == 200
+        assert r.json()["mode"] == "mock"
+        assert "src.drone.tello_controller" not in sys.modules
+
+    def test_high_risk_patrol_recommendation_does_not_launch(self, client):
+        from src.api.db.database import set_system_state
+
+        set_system_state(
+            "latest_drone_state",
+            {
+                "active_alert_window": True,
+                "drone_status": "ACTIVE_CYCLE",
+                "drone_interval_minutes": 30,
+                "next_launch_time": "2026-05-04T09:30:00+03:00",
+                "reason": "High-risk flag active",
+            },
+        )
+
+        patrol = client.get("/drone/patrol/state")
+        assert patrol.status_code == 200
+        assert patrol.json()["patrol_recommended"] is True
+        assert patrol.json()["physical_launch_allowed"] is False
+
+        status = client.get("/drone/status").json()
+        assert status["connected"] is False
+        assert status["stream_active"] is False
+
+    def test_emergency_stop_is_idempotent(self, client):
+        first = client.post("/drone/emergency-stop")
+        second = client.post("/drone/emergency-stop")
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        assert first.json()["emergency_stopped"] is True
+        assert second.json()["emergency_stopped"] is True
+
+
 class TestDatabasePersistence:
     def test_save_and_retrieve(self):
         run = {
