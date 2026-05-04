@@ -575,12 +575,11 @@ function DroneFeedCard() {
     <FeedCard
       title="Drone Camera"
       subtitle={
-        `${modeLabel} mode · ${
-          hwAvailable
-            ? status?.battery != null
-              ? `Battery ${status.battery}%`
-              : "Operator-controlled"
-            : "Hardware unavailable"
+        `${modeLabel} mode · ${hwAvailable
+          ? status?.battery != null
+            ? `Battery ${status.battery}%`
+            : "Operator-controlled"
+          : "Hardware unavailable"
         }`
       }
       icon={<Plane className="h-4 w-4" />}

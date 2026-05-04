@@ -6,7 +6,7 @@ import datetime
 from ultralytics import YOLO
 
 # Global settings and state
-MODEL_PATH = os.path.join("fire_detection_model", "best3.pt")
+MODEL_PATH = os.path.join("fire_detection_model", "best2.pt")
 fire_model = None
 
 # We keep running status and the latest frames + detections for the API

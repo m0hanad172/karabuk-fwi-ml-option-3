@@ -4,6 +4,7 @@
 .venv/
 venv/
 env/
+firesys/
 __pycache__/
 *.pyc
 *.pyo
