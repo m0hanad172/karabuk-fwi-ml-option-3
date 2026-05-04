@@ -30,3 +30,9 @@ djitellopy>=2.5
 
 # --- Testing ---
 pytest>=8.0,<10
+
+# --- Frontend map dependencies (installed via frontend/package.json, not pip) ---
+# leaflet
+# react-leaflet
+# @types/leaflet
+# @types/geojson

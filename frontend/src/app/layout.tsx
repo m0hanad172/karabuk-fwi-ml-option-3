@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Ubuntu, Ubuntu_Mono, Oswald } from "next/font/google";
 
 import { Providers } from "@/components/providers";
+import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
 // Primary UI font — per enterprise-SKILL.md brand guidance.

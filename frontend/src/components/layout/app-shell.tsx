@@ -69,7 +69,7 @@ export function AppShell() {
       <AlertBanner />
 
       {/* Desktop sidebar — permanent column */}
-      <div className="hidden lg:flex lg:w-[260px] lg:flex-shrink-0">
+      <div className="hidden lg:sticky lg:top-0 lg:z-30 lg:flex lg:h-screen lg:w-[260px] lg:flex-shrink-0">
         <SidebarNav activeId={active} onSelect={select} />
       </div>
 

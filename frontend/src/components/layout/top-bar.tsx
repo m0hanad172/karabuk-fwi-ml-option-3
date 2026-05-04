@@ -25,7 +25,7 @@ export function TopBar({ active, onMenu }: TopBarProps) {
   const label = t.nav[active.id].label;
   return (
     <header
-      className="sticky top-0 z-20 flex items-center gap-4 border-b bg-background/95 backdrop-blur px-4 md:px-8 py-3 md:py-4"
+      className="sticky top-0 z-50 flex items-center gap-4 border-b bg-background/95 backdrop-blur px-4 md:px-8 py-3 md:py-4"
       style={{ borderColor: "var(--border)" }}
     >
       <Button

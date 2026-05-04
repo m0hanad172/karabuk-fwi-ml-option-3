@@ -41,7 +41,7 @@ export function SidebarNav({ activeId, onSelect, onNavigate }: SidebarNavProps) 
       )}
     >
       {/* Brand block */}
-      <div className="px-5 py-5 border-b border-sidebar-border flex items-center gap-3">
+      <div className="px-5 py-4 border-b border-sidebar-border flex items-center gap-3">
         <span
           className="flex h-9 w-9 items-center justify-center rounded-md"
           style={{ background: "rgba(255, 95, 3, 0.14)" }}
@@ -62,7 +62,7 @@ export function SidebarNav({ activeId, onSelect, onNavigate }: SidebarNavProps) 
       {/* Nav groups */}
       <nav
         aria-label={t.scope.primary}
-        className="flex-1 overflow-y-auto px-3 py-4 space-y-6"
+        className="flex-1 overflow-hidden px-3 py-3 space-y-4"
       >
         {itemsByGroup.map(({ group, items }) => (
           <NavGroupBlock
@@ -79,7 +79,7 @@ export function SidebarNav({ activeId, onSelect, onNavigate }: SidebarNavProps) 
       </nav>
 
       {/* Scope footer */}
-      <div className="px-5 py-4 border-t border-sidebar-border text-[11px] leading-snug text-sidebar-foreground/60">
+      <div className="px-5 py-3 border-t border-sidebar-border text-[10px] leading-snug text-sidebar-foreground/60">
         <p className="font-display uppercase tracking-widest text-[10px] text-sidebar-foreground/50">
           {t.sidebar.scopeLabel}
         </p>
@@ -107,7 +107,7 @@ function NavGroupBlock({
       <p className="px-2 ent-eyebrow mb-2 text-sidebar-foreground/50">
         {t.groups[group]}
       </p>
-      <ul role="list" className="space-y-1">
+      <ul role="list" className="space-y-0.5">
         {items.map((item) => {
           const Icon = item.icon;
           const active = item.id === activeId;
@@ -119,7 +119,7 @@ function NavGroupBlock({
                 onClick={() => onSelect(item.id)}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "group w-full flex items-center gap-3 rounded-md px-3 py-2",
+                  "group w-full flex items-center gap-3 rounded-md px-3 py-1.5",
                   "text-sm font-medium transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2",
                   "focus-visible:ring-sidebar-ring focus-visible:ring-offset-2",
