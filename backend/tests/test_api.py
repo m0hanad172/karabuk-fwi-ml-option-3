@@ -255,6 +255,50 @@ class TestDroneEndpoint:
         assert "drone_status" in data
 
 
+class _FakeTelloController:
+    mode = "tello"
+
+    def __init__(self, battery: int | None, connected: bool):
+        self.battery = battery
+        self.connected = connected
+        self.demo_called = False
+
+    def get_status(self):
+        from src.drone.models import DroneStatus
+
+        return DroneStatus(
+            mode="tello",
+            connected=self.connected,
+            stream_active=False,
+            hardware_available=True,
+            battery=self.battery,
+            emergency_stopped=False,
+        )
+
+    def demo_patrol(self, move_cm: int, up_cm: int, delay_seconds: float):
+        self.demo_called = True
+        return [
+            "takeoff",
+            f"move_up {up_cm}cm",
+            f"move_forward {move_cm}cm",
+            "land",
+        ]
+
+
+def _install_fake_tello_service(monkeypatch, fake: _FakeTelloController) -> None:
+    from configs import settings
+    from src.drone.service import get_drone_service, reset_drone_service_for_tests
+
+    monkeypatch.setattr(settings, "DRONE_MODE", "tello")
+    monkeypatch.setattr(settings, "DRONE_ALLOW_DEMO_PATROL", True)
+    monkeypatch.setattr(settings, "DRONE_ALLOW_AUTO_TAKEOFF", True)
+    monkeypatch.setattr(settings, "DRONE_REQUIRE_OPERATOR_CONFIRMATION", True)
+    monkeypatch.setattr(settings, "DRONE_BATTERY_MIN_PERCENT", 25)
+    reset_drone_service_for_tests()
+    service = get_drone_service()
+    service.controller = fake
+
+
 class TestOperatorDroneLayer:
     @pytest.fixture(autouse=True)
     def _reset_drone(self):
@@ -291,6 +335,96 @@ class TestOperatorDroneLayer:
         stopped = client.post("/drone/stream/stop")
         assert stopped.status_code == 200
         assert stopped.json()["stream_active"] is False
+
+    def test_demo_patrol_endpoint_mock_succeeds(self, client):
+        r = client.post(
+            "/drone/demo-patrol",
+            json={"mode": "mock", "operator_confirmed": True},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["ok"] is True
+        assert data["mode"] == "mock"
+        assert data["status"] == "completed"
+        assert "Mock demo patrol completed" in data["message"]
+        assert data["route"] == [
+            "takeoff",
+            "up 50",
+            "forward 100",
+            "right 100",
+            "back 100",
+            "left 100",
+            "land",
+        ]
+
+    def test_demo_patrol_tello_blocked_by_default(self, client, monkeypatch):
+        from configs import settings
+        from src.drone.service import reset_drone_service_for_tests
+
+        monkeypatch.setattr(settings, "DRONE_MODE", "tello")
+        monkeypatch.setattr(settings, "DRONE_ALLOW_DEMO_PATROL", False)
+        reset_drone_service_for_tests()
+
+        r = client.post(
+            "/drone/demo-patrol",
+            json={"mode": "tello", "operator_confirmed": True},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["ok"] is False
+        assert data["status"] == "blocked"
+        assert "DRONE_ALLOW_DEMO_PATROL" in data["message"]
+
+    def test_demo_patrol_missing_operator_confirmation_blocks_real_route(
+        self, client, monkeypatch
+    ):
+        from configs import settings
+
+        fake = _FakeTelloController(battery=80, connected=True)
+        _install_fake_tello_service(monkeypatch, fake)
+
+        r = client.post(
+            "/drone/demo-patrol",
+            json={"mode": "tello", "operator_confirmed": False},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["ok"] is False
+        assert "Operator confirmation" in data["message"]
+        assert fake.demo_called is False
+        assert settings.CLASS_THRESHOLD == 35
+
+    def test_demo_patrol_low_battery_blocks_real_route(self, client, monkeypatch):
+        fake = _FakeTelloController(battery=10, connected=True)
+        _install_fake_tello_service(monkeypatch, fake)
+
+        r = client.post(
+            "/drone/demo-patrol",
+            json={"mode": "tello", "operator_confirmed": True},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["ok"] is False
+        assert "battery" in data["message"].lower()
+        assert fake.demo_called is False
+
+    def test_demo_patrol_does_not_write_run_history_or_change_threshold(
+        self, client
+    ):
+        from configs import settings
+        from src.api.db.database import get_run_history
+
+        before = len(get_run_history(limit=500))
+        r = client.post(
+            "/drone/demo-patrol",
+            json={"mode": "mock", "operator_confirmed": True},
+        )
+        after = len(get_run_history(limit=500))
+
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+        assert after == before
+        assert settings.CLASS_THRESHOLD == 35
 
     def test_manual_command_blocked_when_disabled(self, client):
         r = client.post("/drone/manual-command", json={"command": "forward"})

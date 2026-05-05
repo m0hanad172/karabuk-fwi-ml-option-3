@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusToast, type StatusToastState } from "@/components/ui/status-toast";
 import {
   Table,
   TableBody,
@@ -31,7 +32,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useApi } from "@/hooks/use-api";
-import { api, snapshotUrl, type DetectionAlert } from "@/lib/api";
+import {
+  api,
+  snapshotUrl,
+  type DetectionAlert,
+  type DetectionAlertsSummary,
+} from "@/lib/api";
 
 /**
  * Detection Alerts — operational evidence centre.
@@ -64,6 +70,11 @@ export function DetectionAlerts() {
   const [readFilter, setReadFilter] = useState<ReadFilter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
+  const [toast, setToast] = useState<StatusToastState | null>(null);
+  const [localReadState, setLocalReadState] = useState<Record<string, boolean>>({});
+  const [localDeletedIds, setLocalDeletedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const summary = useApi(
     () => api.getDetectionAlertsSummary(),
@@ -97,9 +108,25 @@ export function DetectionAlerts() {
 
   const markOneRead = useCallback(
     async (id: string) => {
+      setLocalReadState((state) => ({ ...state, [id]: true }));
       try {
         await api.markDetectionAlertRead(id);
+        setToast({
+          title: "Detection Alerts",
+          message: "Alert marked read.",
+          tone: "success",
+        });
       } catch {
+        setLocalReadState((state) => {
+          const next = { ...state };
+          delete next[id];
+          return next;
+        });
+        setToast({
+          title: "Detection Alerts",
+          message: "Could not mark alert read.",
+          tone: "danger",
+        });
         // Best effort: a failed mark-as-read is not user-fatal — the
         // unread badge will still reflect server truth on next poll.
       }
@@ -110,34 +137,97 @@ export function DetectionAlerts() {
 
   const markOneUnread = useCallback(
     async (id: string) => {
+      const previous = localReadState[id];
+      setLocalReadState((state) => ({ ...state, [id]: false }));
       try {
         await api.markDetectionAlertUnread(id);
+        setToast({
+          title: "Detection Alerts",
+          message: "Alert marked unread.",
+          tone: "success",
+        });
       } catch {
+        setLocalReadState((state) => {
+          const next = { ...state };
+          if (previous === undefined) delete next[id];
+          else next[id] = previous;
+          return next;
+        });
+        setToast({
+          title: "Detection Alerts",
+          message: "Could not mark alert unread.",
+          tone: "danger",
+        });
         // Best effort: the list refresh below restores server truth.
       }
       refetchAll();
     },
-    [refetchAll],
+    [localReadState, refetchAll],
   );
 
   const markAllRead = useCallback(async () => {
     setMarkingAll(true);
+    const serverRows = alerts.data?.alerts ?? [];
+    setLocalReadState((state) => {
+      const next = { ...state };
+      for (const alert of serverRows) {
+        if (!isAlertRead(alert)) next[alert.id] = true;
+      }
+      return next;
+    });
     try {
       await api.markAllDetectionAlertsRead();
+      setToast({
+        title: "Detection Alerts",
+        message: "All visible alerts marked read.",
+        tone: "success",
+      });
     } catch {
+      setLocalReadState((state) => {
+        const next = { ...state };
+        for (const alert of serverRows) {
+          if (!isAlertRead(alert)) delete next[alert.id];
+        }
+        return next;
+      });
+      setToast({
+        title: "Detection Alerts",
+        message: "Could not mark all alerts read.",
+        tone: "danger",
+      });
       // see above
     }
     setMarkingAll(false);
     refetchAll();
-  }, [refetchAll]);
+  }, [alerts.data?.alerts, refetchAll]);
 
   const deleteOne = useCallback(
     async (id: string) => {
       if (!window.confirm("Delete this alert?")) return;
+      setLocalDeletedIds((ids) => {
+        const next = new Set(ids);
+        next.add(id);
+        return next;
+      });
+      if (selectedId === id) setSelectedId(null);
       try {
         await api.deleteDetectionAlert(id);
-        if (selectedId === id) setSelectedId(null);
+        setToast({
+          title: "Detection Alerts",
+          message: "Alert deleted.",
+          tone: "success",
+        });
       } catch {
+        setLocalDeletedIds((ids) => {
+          const next = new Set(ids);
+          next.delete(id);
+          return next;
+        });
+        setToast({
+          title: "Detection Alerts",
+          message: "Could not delete alert.",
+          tone: "danger",
+        });
         // The refresh below restores server truth if the delete failed.
       }
       refetchAll();
@@ -145,8 +235,25 @@ export function DetectionAlerts() {
     [refetchAll, selectedId],
   );
 
-  const rows = alerts.data?.alerts ?? [];
-  const summaryData = summary.data;
+  const serverRows = alerts.data?.alerts ?? [];
+  const rows = useMemo(
+    () =>
+      serverRows
+        .filter((alert) => !localDeletedIds.has(alert.id))
+        .map((alert) => applyLocalReadState(alert, localReadState))
+        .filter((alert) => matchesReadFilter(alert, readFilter)),
+    [localDeletedIds, localReadState, readFilter, serverRows],
+  );
+  const summaryData = useMemo(
+    () =>
+      applyOptimisticSummary(
+        summary.data,
+        serverRows,
+        localReadState,
+        localDeletedIds,
+      ),
+    [localDeletedIds, localReadState, serverRows, summary.data],
+  );
 
   const byCount = summaryData?.by_source ?? {};
   const totalBySource = useMemo(
@@ -160,6 +267,7 @@ export function DetectionAlerts() {
 
   return (
     <div className="space-y-6">
+      <StatusToast toast={toast} onClose={() => setToast(null)} />
       {/* Layer tag — makes Detection Alerts vs Monitoring unambiguous */}
       <div
         className="rounded-md border px-4 py-2.5 text-[12px] leading-snug flex items-start gap-2"
@@ -178,7 +286,7 @@ export function DetectionAlerts() {
           <span className="font-semibold">Alert log.</span> Every fire /
           smoke detection from CCTV, the camera feeds, and the drone
           stream — saved with a snapshot. Live feeds: see the{" "}
-          <span className="font-medium">Monitoring</span> tab.
+          <span className="font-medium">Overview</span>.
         </span>
       </div>
 
@@ -215,10 +323,18 @@ export function DetectionAlerts() {
                 onClick={async () => {
                   try {
                     await api.createTestDetectionAlert("fire", 0.78, "demo");
+                    setToast({
+                      title: "Detection Alerts",
+                      message: "Test alert created.",
+                      tone: "success",
+                    });
                     refetchAll();
                   } catch {
-                    // Surfaces via the underlying summary/list error
-                    // states; nothing extra to do here.
+                    setToast({
+                      title: "Detection Alerts",
+                      message: "Could not create test alert.",
+                      tone: "danger",
+                    });
                   }
                 }}
                 title="Append a synthetic 'fire' alert (source=demo) for testing the dashboard."
@@ -412,8 +528,8 @@ export function DetectionAlerts() {
             </p>
             <p>
               Alerts will appear here automatically when smoke or fire is
-              detected. Start a drone or camera feed from the Monitoring
-              tab to begin watching
+              detected. Start a drone or camera feed from Overview to
+              begin watching
               {demoEnabled ? (
                 <>
                   , or click <strong>Test alert</strong> above to append a
@@ -887,6 +1003,69 @@ function isAlertRead(alert: DetectionAlert): boolean {
   return alert.read === true;
 }
 
+function applyLocalReadState(
+  alert: DetectionAlert,
+  localReadState: Record<string, boolean>,
+): DetectionAlert {
+  const localValue = localReadState[alert.id];
+  if (localValue === undefined) return alert;
+  return {
+    ...alert,
+    is_read: localValue,
+    read: localValue,
+    read_at: localValue ? alert.read_at ?? new Date().toISOString() : null,
+  };
+}
+
+function matchesReadFilter(alert: DetectionAlert, filter: ReadFilter): boolean {
+  if (filter === "all") return true;
+  const read = isAlertRead(alert);
+  return filter === "read" ? read : !read;
+}
+
+function applyOptimisticSummary(
+  summary: DetectionAlertsSummary | null | undefined,
+  serverRows: DetectionAlert[],
+  localReadState: Record<string, boolean>,
+  localDeletedIds: Set<string>,
+): DetectionAlertsSummary | null | undefined {
+  if (!summary) return summary;
+  let total = summary.total;
+  let unread = summary.unread_count;
+  let read = summary.read_count;
+  const bySource = { ...summary.by_source };
+
+  for (const alert of serverRows) {
+    const serverRead = isAlertRead(alert);
+    if (localDeletedIds.has(alert.id)) {
+      total = Math.max(0, total - 1);
+      if (serverRead) read = Math.max(0, read - 1);
+      else unread = Math.max(0, unread - 1);
+      bySource[alert.source] = Math.max(0, (bySource[alert.source] ?? 0) - 1);
+      continue;
+    }
+
+    const localRead = localReadState[alert.id];
+    if (localRead !== undefined && localRead !== serverRead) {
+      if (localRead) {
+        unread = Math.max(0, unread - 1);
+        read += 1;
+      } else {
+        unread += 1;
+        read = Math.max(0, read - 1);
+      }
+    }
+  }
+
+  return {
+    ...summary,
+    total,
+    unread_count: unread,
+    read_count: read,
+    by_source: bySource,
+  };
+}
+
 function sourceMeta(source: string): { icon: React.ReactNode; tone: string } {
   switch (source) {
     case "drone":
@@ -935,7 +1114,7 @@ function AlertDetailDrawer({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-[9998] flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Detection alert detail"

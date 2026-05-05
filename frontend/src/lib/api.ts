@@ -190,6 +190,16 @@ export interface DroneMonitoringStatus {
   operator_confirmation_required?: boolean;
   emergency_stopped?: boolean;
   station_id?: string;
+  demo_patrol_status?: string;
+  demo_patrol_message?: string | null;
+}
+
+export interface DroneDemoPatrolResponse {
+  ok: boolean;
+  mode: "mock" | "tello";
+  status: "completed" | "blocked" | "running";
+  message: string;
+  route?: string[];
 }
 
 export interface MonitoringNotification {
@@ -293,6 +303,14 @@ export const api = {
     fetchApi<DroneMonitoringStatus>("/monitoring/drone/stop", { method: "POST" }),
   emergencyStopDrone: () =>
     fetchApi<DroneMonitoringStatus>("/drone/emergency-stop", { method: "POST" }),
+  runDemoPatrol: (mode: "mock" | "tello", operatorConfirmed: boolean) =>
+    fetchApi<DroneDemoPatrolResponse>("/drone/demo-patrol", {
+      method: "POST",
+      body: JSON.stringify({
+        mode,
+        operator_confirmed: operatorConfirmed,
+      }),
+    }),
   getMonitoringNotifications: (limit = 50) =>
     fetchApi<{ notifications: MonitoringNotification[] }>(
       `/monitoring/notifications?limit=${limit}`,

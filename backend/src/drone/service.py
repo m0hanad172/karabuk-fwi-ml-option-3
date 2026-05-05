@@ -39,6 +39,8 @@ class DroneService:
         self._detections: list[dict] = []
         self._capture_fps = 0.0
         self._inference_fps = 0.0
+        self._demo_status = "idle"
+        self._demo_last_message: str | None = None
 
     def _build_controller(self, mode: str) -> DroneController:
         if mode == "tello":
@@ -100,12 +102,101 @@ class DroneService:
     def emergency_stop(self) -> dict:
         with self._lock:
             self._stream_requested = False
+            self._demo_status = "emergency_stopped"
+            self._demo_last_message = "Emergency stop requested"
             status = self.controller.emergency_stop()
             self._frame = None
             self._detections = []
             self._capture_fps = 0.0
             self._inference_fps = 0.0
         return self._decorate(status)
+
+    def demo_patrol(self, mode: str, operator_confirmed: bool = False) -> dict:
+        """Run a demo-only patrol without touching prediction/run history."""
+        requested_mode = (mode or "mock").strip().lower()
+        if requested_mode == "mock":
+            with self._lock:
+                self._demo_status = "running"
+                mock = MockDroneController()
+                route = mock.demo_patrol(
+                    settings.DRONE_DEMO_MOVE_CM,
+                    settings.DRONE_DEMO_UP_CM,
+                    settings.DRONE_DEMO_COMMAND_DELAY_SECONDS,
+                )
+                self._demo_status = "completed"
+                self._demo_last_message = "Mock demo patrol completed"
+            return {
+                "ok": True,
+                "mode": "mock",
+                "status": "completed",
+                "message": "Mock demo patrol completed",
+                "route": route,
+            }
+
+        blocked = self._tello_demo_block_reason(operator_confirmed)
+        if blocked:
+            self._demo_status = "blocked"
+            self._demo_last_message = blocked
+            return {
+                "ok": False,
+                "mode": "tello",
+                "status": "blocked",
+                "message": blocked,
+            }
+
+        with self._lock:
+            self._demo_status = "running"
+            try:
+                route = self.controller.demo_patrol(
+                    settings.DRONE_DEMO_MOVE_CM,
+                    settings.DRONE_DEMO_UP_CM,
+                    settings.DRONE_DEMO_COMMAND_DELAY_SECONDS,
+                )
+            except Exception as e:  # noqa: BLE001
+                self._demo_status = "blocked"
+                self._demo_last_message = f"Tello demo patrol failed: {e}"
+                return {
+                    "ok": False,
+                    "mode": "tello",
+                    "status": "blocked",
+                    "message": self._demo_last_message,
+                }
+            self._demo_status = "completed"
+            self._demo_last_message = "Controlled Tello demo patrol completed"
+            return {
+                "ok": True,
+                "mode": "tello",
+                "status": "completed",
+                "message": "Controlled Tello demo patrol completed",
+                "route": route,
+            }
+
+    def _tello_demo_block_reason(self, operator_confirmed: bool) -> str | None:
+        if settings.DRONE_MODE != "tello" or self.controller.mode != "tello":
+            return "Tello demo patrol requires DRONE_MODE=tello"
+        if not settings.DRONE_ALLOW_DEMO_PATROL:
+            return "Tello demo patrol is disabled by DRONE_ALLOW_DEMO_PATROL"
+        if not settings.DRONE_ALLOW_AUTO_TAKEOFF:
+            return "Tello takeoff is disabled by DRONE_ALLOW_AUTO_TAKEOFF"
+        if (
+            settings.DRONE_REQUIRE_OPERATOR_CONFIRMATION
+            and not operator_confirmed
+        ):
+            return "Operator confirmation is required"
+
+        status = self.controller.get_status()
+        if not status.connected:
+            return "Tello is not connected"
+        if status.emergency_stopped:
+            return "Emergency stop is active"
+        if status.battery is None:
+            return "Tello battery level is unavailable"
+        if status.battery < settings.DRONE_BATTERY_MIN_PERCENT:
+            return (
+                "Tello battery is below minimum "
+                f"({status.battery}% < {settings.DRONE_BATTERY_MIN_PERCENT}%)"
+            )
+        return None
 
     def patrol_state(self, risk_state: dict | None) -> dict:
         active = bool((risk_state or {}).get("active_alert_window"))
@@ -220,6 +311,8 @@ class DroneService:
         status.station_id = settings.DRONE_DEFAULT_STATION_ID
         out = status.to_dict()
         out["inference_stride"] = INFERENCE_STRIDE
+        out["demo_patrol_status"] = self._demo_status
+        out["demo_patrol_message"] = self._demo_last_message
         return out
 
 

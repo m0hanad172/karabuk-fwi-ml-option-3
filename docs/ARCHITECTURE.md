@@ -155,6 +155,13 @@ start means video input only; it does **not** mean physical takeoff. Physical
 drone movement remains operator-controlled, and launch requires operator
 confirmation.
 
+The **Run Demo Patrol** trigger is separate from the production wildfire risk
+decision. It allows the drone workflow to be tested during low-risk days
+without changing the real High Risk threshold. In mock mode it simulates the
+patrol. In Tello mode, the controlled route is short, configurable, and blocked
+unless demo patrol, takeoff permission, battery, connection, and operator
+confirmation gates all pass.
+
 The old project is used only as a reference for Tello connection, stream
 start/stop, frame reading, MJPEG streaming, and YOLO-on-drone-frame detection.
 FireWatch does not copy the old global-state drone control style.

@@ -92,6 +92,21 @@ class MockDroneController:
         self.last_command = command
         return self.get_status()
 
+    def demo_patrol(self, move_cm: int, up_cm: int, delay_seconds: float) -> list[str]:
+        self.connected = True
+        self.last_error = None
+        route = [
+            "takeoff",
+            f"up {up_cm}",
+            f"forward {move_cm}",
+            f"right {move_cm}",
+            f"back {move_cm}",
+            f"left {move_cm}",
+            "land",
+        ]
+        self.last_command = "demo_patrol"
+        return route
+
     def emergency_stop(self) -> DroneStatus:
         self.stream_active = False
         self.connected = False

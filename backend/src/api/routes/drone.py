@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from src.api.db.database import get_system_state
-from src.drone.models import ManualDroneCommand
+from src.drone.models import DemoPatrolRequest, ManualDroneCommand
 from src.drone.service import DroneSafetyError, get_drone_service
 
 router = APIRouter(prefix="/drone", tags=["drone"])
@@ -77,6 +77,20 @@ async def drone_manual_command(req: ManualDroneCommand):
 @router.post("/emergency-stop", summary="Emergency stop the drone adapter")
 async def drone_emergency_stop():
     return get_drone_service().emergency_stop()
+
+
+@router.post("/demo-patrol", summary="Run demo-only drone patrol")
+async def drone_demo_patrol(req: DemoPatrolRequest):
+    """Demo-only patrol trigger.
+
+    This endpoint is separate from production wildfire risk decisions. It never
+    writes fake risk checks into run_history and never lowers the high-risk
+    threshold.
+    """
+    return get_drone_service().demo_patrol(
+        mode=req.mode,
+        operator_confirmed=req.operator_confirmed,
+    )
 
 
 @router.get("/patrol/state", summary="Drone patrol recommendation state")

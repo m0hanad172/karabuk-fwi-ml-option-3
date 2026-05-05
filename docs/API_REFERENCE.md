@@ -111,6 +111,7 @@ path.
 | GET | `/drone/feed` | Drone/video MJPEG feed |
 | POST | `/drone/manual-command` | Manual command, blocked unless enabled by config |
 | POST | `/drone/emergency-stop` | Idempotent emergency stop |
+| POST | `/drone/demo-patrol` | Demo-only patrol trigger; separate from production risk |
 | GET | `/drone/patrol/state` | Patrol recommendation state; no physical launch |
 
 The response carries `active_alert_window` (whether a High Risk
@@ -124,6 +125,19 @@ connected — see the operational logic in
 Drone adapter endpoints are operator-controlled. `DRONE_MODE=mock` is the
 default. `DRONE_MODE=tello` prepares DJI Tello stream integration, but physical
 launch still requires operator confirmation and is not automatic.
+
+Demo patrol request:
+
+```json
+{
+  "operator_confirmed": true,
+  "mode": "mock"
+}
+```
+
+Mock mode completes without hardware. Tello mode is blocked unless the safety
+configuration, connection, battery, and confirmation gates pass. This endpoint
+does not write fake prediction runs to `run_history`.
 
 ## Monitoring and Detection
 

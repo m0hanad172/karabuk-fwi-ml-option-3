@@ -90,12 +90,22 @@ DRONE_AUTO_CONNECT=false
 DRONE_VIDEO_ENABLED=true
 DRONE_ALLOW_MANUAL_CONTROL=false
 DRONE_ALLOW_AUTO_TAKEOFF=false
+DRONE_ALLOW_DEMO_PATROL=false
 DRONE_REQUIRE_OPERATOR_CONFIRMATION=true
+DRONE_DEMO_MOVE_CM=100
+DRONE_DEMO_UP_CM=50
+DRONE_DEMO_COMMAND_DELAY_SECONDS=1
 ```
 
 Use `DRONE_MODE=tello` only for an operator-controlled DJI Tello demo.
 Starting the stream does not take off. Physical launch requires operator
 confirmation and a separate safety check.
+
+The Overview **Run Demo Patrol** button is demo/test only. Mock mode works
+without hardware. Real Tello movement remains blocked unless
+`DRONE_MODE=tello`, `DRONE_ALLOW_DEMO_PATROL=true`, takeoff is explicitly
+enabled, the drone is connected, battery is above the configured minimum, and
+the operator confirms the action.
 
 Frontend optional environment file:
 

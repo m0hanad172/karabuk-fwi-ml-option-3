@@ -126,8 +126,8 @@ export const DICT: Record<Lang, Dict> = {
         sub: "Durable evidence log of fire detections — drone, webcam and PC camera.",
       },
       system: {
-        label: "System / Model",
-        sub: "Model version, thresholds, scheduler and data-quality health.",
+        label: "System & Model",
+        sub: "Model summary, daily input contract, thresholds and features.",
       },
       flow: {
         label: "System Flow",
@@ -205,7 +205,7 @@ export const DICT: Record<Lang, Dict> = {
         sub: "Drone ve kamera tespitlerinin dayanıklı kanıt günlüğü.",
       },
       system: {
-        label: "Sistem / Model",
+        label: "Sistem & Model",
         sub: "Model sürümü, eşikler, zamanlayıcı ve veri kalitesi.",
       },
       flow: {

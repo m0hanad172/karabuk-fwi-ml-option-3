@@ -1,23 +1,30 @@
 "use client";
 
+import { useState } from "react";
 import {
   AlertTriangle,
+  Camera,
   CheckCircle2,
   Clock,
   Cloud,
   CloudRain,
   Droplets,
   MapPin,
+  Plane,
   RefreshCw,
+  ShieldAlert,
   Thermometer,
   Wind,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusToast, type StatusToastState } from "@/components/ui/status-toast";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { formatIstanbulTime } from "@/lib/time";
+import { LiveFeedsPanel } from "./monitoring-drone";
 
 /**
  * Overview — executive operational summary.
@@ -30,13 +37,49 @@ export function LiveOverview() {
   const weather = useApi(() => api.getLiveWeather(), [], 300_000);
   const latest = useApi(() => api.getLatestPrediction(), [], 60_000);
   const scheduler = useApi(() => api.getScheduler(), [], 60_000);
+  const cameras = useApi(() => api.listCameras(), [], 15_000);
+  const droneStatus = useApi(() => api.getDroneMonitoringStatus(), [], 15_000);
+  const dronePolicy = useApi(() => api.getDroneState(), [], 30_000);
+  const alertSummary = useApi(() => api.getDetectionAlertsSummary(), [], 30_000);
 
   const w = weather.data;
   const p = latest.data;
   const isHighRisk = p?.high_risk_flag === 1;
+  const [demoBusy, setDemoBusy] = useState(false);
+  const [demoToast, setDemoToast] = useState<StatusToastState | null>(null);
+
+  async function runDemoPatrol() {
+    if (
+      !window.confirm(
+        "Run controlled drone demo patrol? Physical launch requires operator confirmation.",
+      )
+    ) {
+      return;
+    }
+    setDemoBusy(true);
+    try {
+      const mode = droneStatus.data?.mode === "tello" ? "tello" : "mock";
+      const result = await api.runDemoPatrol(mode, true);
+      setDemoToast({
+        title: "Demo Patrol",
+        tone: result.ok ? "success" : "warning",
+        message: result.message,
+      });
+    } catch (e) {
+      setDemoToast({
+        title: "Demo Patrol",
+        tone: "danger",
+        message: (e as Error).message,
+      });
+    } finally {
+      setDemoBusy(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
+      <StatusToast toast={demoToast} onClose={() => setDemoToast(null)} />
+
       {/* Alert banner */}
       <AlertBanner
         ready={!!p}
@@ -50,7 +93,14 @@ export function LiveOverview() {
       <section aria-label="Latest operational result">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiTile
-            eyebrow="Predicted FWI"
+            eyebrow="Current Risk"
+            value={p ? (isHighRisk ? "HIGH" : "NORMAL") : "—"}
+            caption={p?.decision_reason ?? "Awaiting latest risk check"}
+            tone={isHighRisk ? "danger" : p ? "success" : "neutral"}
+            loading={!p && !latest.error}
+          />
+          <KpiTile
+            eyebrow="Latest FWI"
             value={p ? p.predicted_fwi.toFixed(1) : "—"}
             caption={thresholdCaption(p?.predicted_fwi)}
             tone={kpiTone(isHighRisk)}
@@ -68,27 +118,34 @@ export function LiveOverview() {
             loading={!p && !latest.error}
           />
           <KpiTile
-            eyebrow="Decision"
-            value={p ? (isHighRisk ? "HIGH RISK" : "NORMAL") : "—"}
-            caption={p?.decision_reason ?? "Awaiting first run"}
-            tone={isHighRisk ? "danger" : p ? "success" : "neutral"}
-            loading={!p && !latest.error}
-          />
-          <KpiTile
-            eyebrow="Last Operational Run"
-            value={p ? formatIstanbulTime(p.run_timestamp) : "—"}
+            eyebrow="Next Scheduled Check"
+            value={nextScheduledCheck(scheduler.data?.jobs)}
             caption={
               p
-                ? `${runTypeLabel(p.run_type)} · target ${p.target_date}`
-                : "No operational runs yet"
+                ? `Latest: ${runTypeLabel(p.run_type)} · ${formatIstanbulTime(p.run_timestamp)}`
+                : "09:00, 11:00, 15:00 Istanbul"
             }
             tone="neutral"
-            loading={!p && !latest.error}
+            loading={!scheduler.data && !scheduler.error}
           />
         </div>
       </section>
 
-      {/* Weather + scheduler row */}
+      <section className="space-y-4" aria-label="Live monitoring feeds">
+        <DroneReadyStrip
+          active={!!dronePolicy.data?.active_alert_window}
+          status={dronePolicy.data?.drone_status}
+          nextLaunch={dronePolicy.data?.next_launch_time}
+          reason={dronePolicy.data?.reason}
+          loading={!dronePolicy.data && !dronePolicy.error}
+          error={dronePolicy.error}
+          onRunDemo={runDemoPatrol}
+          demoBusy={demoBusy}
+        />
+        <LiveFeedsPanel />
+      </section>
+
+      {/* Weather + operations summary row */}
       <section className="grid lg:grid-cols-3 gap-4">
         <WeatherPanel
           loading={weather.loading}
@@ -130,12 +187,30 @@ export function LiveOverview() {
           ]}
         />
 
-        <SchedulerPanel
-          running={scheduler.data?.running}
-          jobs={scheduler.data?.jobs ?? []}
-          loading={!scheduler.data && !scheduler.error}
-          error={scheduler.error}
-        />
+        <div className="space-y-4">
+          <SchedulerPanel
+            running={scheduler.data?.running}
+            jobs={scheduler.data?.jobs ?? []}
+            loading={!scheduler.data && !scheduler.error}
+            error={scheduler.error}
+          />
+          <MonitoringStatusPanel
+            cameras={cameras.data?.cameras ?? []}
+            droneRunning={!!droneStatus.data?.running}
+            droneMode={droneStatus.data?.mode}
+            hardwareAvailable={droneStatus.data?.hardware_available}
+            loading={
+              (!cameras.data && !cameras.error) ||
+              (!droneStatus.data && !droneStatus.error)
+            }
+            error={cameras.error || droneStatus.error}
+          />
+          <LatestDetectionPanel
+            summary={alertSummary.data ?? null}
+            loading={!alertSummary.data && !alertSummary.error}
+            error={alertSummary.error}
+          />
+        </div>
       </section>
     </div>
   );
@@ -270,6 +345,78 @@ function KpiTile({
   );
 }
 
+function DroneReadyStrip({
+  active,
+  status,
+  nextLaunch,
+  reason,
+  loading,
+  error,
+  onRunDemo,
+  demoBusy,
+}: {
+  active: boolean;
+  status?: string;
+  nextLaunch?: string | null;
+  reason?: string;
+  loading: boolean;
+  error: string | null;
+  onRunDemo: () => void;
+  demoBusy: boolean;
+}) {
+  return (
+    <div className="ent-card px-5 py-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="ent-eyebrow">Drone-ready</p>
+          <h3 className="font-display text-lg font-semibold leading-none mt-1">
+            Operator-controlled Monitoring
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Demo only · does not change production risk threshold.
+          </p>
+        </div>
+        {loading ? (
+          <Skeleton className="h-8 w-48" />
+        ) : error ? (
+          <Badge variant="secondary" className="self-start lg:self-center">
+            Policy unavailable
+          </Badge>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <Badge
+              variant={active ? "destructive" : "secondary"}
+              className="text-[10px] uppercase tracking-wider"
+            >
+              {active ? "Patrol Recommended" : "Patrol Standby"}
+            </Badge>
+            <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
+              {status ?? "Operator-controlled"}
+            </Badge>
+            <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
+              Next {nextLaunch ? formatIstanbulTime(nextLaunch) : "—"}
+            </Badge>
+            <Button
+              type="button"
+              size="sm"
+              onClick={onRunDemo}
+              disabled={demoBusy}
+              className="h-7 px-3 text-[11px]"
+            >
+              {demoBusy ? "Running..." : "Run Demo Patrol"}
+            </Button>
+          </div>
+        )}
+      </div>
+      {!loading && !error && reason && (
+        <p className="mt-2 text-xs text-muted-foreground line-clamp-1">
+          {reason}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function WeatherPanel({
   loading,
   error,
@@ -318,10 +465,22 @@ function WeatherPanel({
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          {items.map((it) => (
-            <WeatherMetric key={it.label} {...it} />
-          ))}
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            {items.map((it) => (
+              <WeatherMetric key={it.label} {...it} />
+            ))}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <WeatherInfo label="Weather Source" value={source ?? "—"} />
+            <WeatherInfo label="Input Type" value="Daily Aggregates" />
+            <WeatherInfo label="Scheduled Checks" value="09 / 11 / 15" />
+            <WeatherInfo
+              label="Last Updated"
+              value={fetchTime ? formatIstanbulTime(fetchTime) : "—"}
+              mono
+            />
+          </div>
         </div>
       )}
 
@@ -372,6 +531,34 @@ function WeatherMetric({
       <span className="font-mono-ent text-lg font-semibold leading-none">
         {value != null ? `${value}${unit}` : "—"}
       </span>
+    </div>
+  );
+}
+
+function WeatherInfo({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div
+      className="rounded-md border px-3 py-2"
+      style={{
+        borderColor: "var(--border)",
+        background: "var(--muted)",
+      }}
+    >
+      <p className="ent-eyebrow">{label}</p>
+      <p
+        className={`mt-1 truncate text-sm font-medium ${mono ? "font-mono-ent" : ""}`}
+        title={value}
+      >
+        {value}
+      </p>
     </div>
   );
 }
@@ -452,8 +639,161 @@ function SchedulerPanel({
         className="mt-4 pt-3 border-t text-[11px] text-muted-foreground flex items-center gap-1.5"
       >
         <RefreshCw className="h-3 w-3" />
-        Two operational slots per day · 11:00 & 15:00 Istanbul
+        Scheduled checks · 09:00, 11:00 & 15:00 Istanbul
       </div>
+    </div>
+  );
+}
+
+function MonitoringStatusPanel({
+  cameras,
+  droneRunning,
+  droneMode,
+  hardwareAvailable,
+  loading,
+  error,
+}: {
+  cameras: { cam_id: string; running?: boolean }[];
+  droneRunning: boolean;
+  droneMode?: string;
+  hardwareAvailable?: boolean;
+  loading: boolean;
+  error: string | null;
+}) {
+  const runningCameras = cameras.filter((c) => c.running).length;
+  const totalCameras = cameras.length || 2;
+  const anyFeedLive = runningCameras > 0 || droneRunning;
+
+  return (
+    <div className="ent-card p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <p className="ent-eyebrow">Monitoring</p>
+          <h3 className="font-display text-lg font-semibold leading-none mt-1">
+            Camera Status
+          </h3>
+        </div>
+        <Badge
+          variant={anyFeedLive ? "default" : "secondary"}
+          className="text-[10px] uppercase tracking-wider"
+        >
+          {anyFeedLive ? "Active" : "Standby"}
+        </Badge>
+      </div>
+
+      {error ? (
+        <p className="text-sm text-muted-foreground">Monitoring unavailable</p>
+      ) : loading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-5 w-full" />
+          <Skeleton className="h-5 w-2/3" />
+        </div>
+      ) : (
+        <div className="space-y-3 text-sm">
+          <SummaryLine
+            icon={<Camera className="h-3.5 w-3.5" />}
+            label="CCTV / Camera"
+            value={`${runningCameras}/${totalCameras} live`}
+          />
+          <SummaryLine
+            icon={<Plane className="h-3.5 w-3.5" />}
+            label="Drone Stream"
+            value={
+              droneRunning
+                ? "Live"
+                : hardwareAvailable === false
+                  ? "Mock / offline"
+                  : "Standby"
+            }
+          />
+          <SummaryLine
+            icon={<ShieldAlert className="h-3.5 w-3.5" />}
+            label="Drone Mode"
+            value={droneMode ? titleCase(droneMode) : "Mock"}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LatestDetectionPanel({
+  summary,
+  loading,
+  error,
+}: {
+  summary: {
+    total: number;
+    unread_count: number;
+    latest_alert?: {
+      source: string;
+      time_str: string;
+      max_confidence: number;
+      detection_count: number;
+    } | null;
+  } | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  const latest = summary?.latest_alert ?? null;
+
+  return (
+    <div className="ent-card p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <p className="ent-eyebrow">Detection</p>
+          <h3 className="font-display text-lg font-semibold leading-none mt-1">
+            Latest Alert
+          </h3>
+        </div>
+        <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
+          {summary ? `${summary.unread_count} unread` : "SQLite"}
+        </Badge>
+      </div>
+
+      {error ? (
+        <p className="text-sm text-muted-foreground">Alert summary unavailable</p>
+      ) : loading ? (
+        <Skeleton className="h-14 w-full" />
+      ) : latest ? (
+        <div className="space-y-2 text-sm">
+          <SummaryLine
+            icon={<ShieldAlert className="h-3.5 w-3.5" />}
+            label={titleCase(latest.source)}
+            value={`${(latest.max_confidence * 100).toFixed(0)}%`}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            {latest.detection_count} detection
+            {latest.detection_count === 1 ? "" : "s"} · {latest.time_str}
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">No detection alerts yet.</p>
+      )}
+    </div>
+  );
+}
+
+function SummaryLine({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="flex items-center gap-2 min-w-0 text-muted-foreground">
+        <span aria-hidden style={{ color: "var(--primary)" }}>
+          {icon}
+        </span>
+        <span className="truncate">{label}</span>
+      </span>
+      <span className="font-mono-ent text-xs text-right whitespace-nowrap">
+        {value}
+      </span>
     </div>
   );
 }
@@ -467,6 +807,23 @@ function kpiTone(high: boolean): KpiTone {
 function runTypeLabel(rt: string): string {
   if (!rt) return "—";
   return rt.charAt(0).toUpperCase() + rt.slice(1);
+}
+
+function nextScheduledCheck(
+  jobs?: { next_run_time: string | null }[],
+): string {
+  const next = jobs
+    ?.map((job) => job.next_run_time)
+    .filter((value): value is string => Boolean(value))
+    .sort()[0];
+  return next ? formatIstanbulTime(next) : "—";
+}
+
+function titleCase(value: string): string {
+  if (!value) return "—";
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function thresholdCaption(predicted?: number): string {
@@ -514,4 +871,3 @@ function toneBorder(tone: KpiTone): string {
       return "var(--border)";
   }
 }
-

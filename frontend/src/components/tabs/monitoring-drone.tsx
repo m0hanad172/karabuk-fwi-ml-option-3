@@ -9,9 +9,7 @@ import {
   Play,
   Plane,
   RefreshCw,
-  ShieldAlert,
   Square,
-  Trash2,
   Wand2,
   Webcam,
 } from "lucide-react";
@@ -27,7 +25,6 @@ import {
   type CameraStatus,
   type DroneMonitoringStatus,
   type MonitoringRuntime,
-  type MonitoringNotification,
 } from "@/lib/api";
 import { formatIstanbulTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -41,7 +38,7 @@ import { cn } from "@/lib/utils";
  *   - detection layer (/monitoring/*) is strictly separate from prediction
  *   - three REAL feeds: Drone (MJPEG) / Webcam (Logitech BRIO 100) / PC Camera
  *   - Drone Operational Policy reads /drone/state from the Stacked v3 risk path
- *   - notifications list polled every 5s from SQLite-backed alerts
+ *   - durable alert review lives in the Detection Alerts tab
  *
  * Phase 5 improvements:
  *   - Feed state reconciles against backend status before mounting MJPEG
@@ -53,26 +50,6 @@ import { cn } from "@/lib/utils";
  */
 export function MonitoringDrone() {
   const dronePolicy = useApi(() => api.getDroneState(), [], 30_000);
-  const notifications = useApi(
-    () => api.getMonitoringNotifications(25),
-    [],
-    5_000,
-  );
-
-  const deleteNotification = useCallback(
-    async (id: string) => {
-      if (!window.confirm("Delete this alert?")) return;
-      try {
-        await api.deleteDetectionAlert(id);
-      } catch {
-        // The refresh below restores server truth if the delete failed.
-      }
-      notifications.refetch();
-    },
-    // deps intentionally omitted; refetch is stable
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
 
   const p = dronePolicy.data;
 
@@ -197,42 +174,6 @@ export function MonitoringDrone() {
         </div>
       </section>
 
-      {/* Notifications */}
-      <div className="ent-card p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <p className="ent-eyebrow">Detection Layer</p>
-            <h3 className="font-display text-lg font-semibold leading-none mt-1 flex items-center gap-2">
-              <ShieldAlert
-                className="h-4 w-4"
-                style={{ color: "var(--destructive)" }}
-              />
-              Fire Detection Notifications
-            </h3>
-          </div>
-          <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
-            5s refresh
-          </Badge>
-        </div>
-        {notifications.error ? (
-          <p className="text-sm text-muted-foreground">
-            Notifications unavailable: {notifications.error}
-          </p>
-        ) : !notifications.data ||
-          notifications.data.notifications.length === 0 ? (
-          <EmptyNotifications />
-        ) : (
-          <ul className="space-y-3 max-h-72 overflow-y-auto pr-1">
-            {notifications.data.notifications.map((n) => (
-              <NotificationRow
-                key={n.id}
-                notification={n}
-                onDelete={() => deleteNotification(n.id)}
-              />
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   );
 }
@@ -496,6 +437,42 @@ function PolicyTile({
         {value}
       </p>
     </div>
+  );
+}
+
+export function LiveFeedsPanel() {
+  return (
+    <section>
+      <div className="flex items-end justify-between mb-3">
+        <div>
+          <p className="ent-eyebrow">Live Feeds</p>
+          <h3 className="font-display text-lg font-semibold leading-none mt-1">
+            Detection Console
+          </h3>
+        </div>
+        <Badge
+          variant="outline"
+          className="text-[10px] uppercase tracking-wider"
+        >
+          Fire detection only — never writes predicted_fwi
+        </Badge>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <DroneFeedCard />
+        <CameraFeedCard
+          camId="webcam"
+          title="Webcam Feed"
+          deviceLabel="Logitech BRIO 100"
+          icon={<Webcam className="h-4 w-4" />}
+        />
+        <CameraFeedCard
+          camId="pc_camera"
+          title="PC Camera Feed"
+          deviceLabel="Built-in Laptop Camera"
+          icon={<Laptop className="h-4 w-4" />}
+        />
+      </div>
+    </section>
   );
 }
 
@@ -862,93 +839,3 @@ function FeedCard({
   );
 }
 
-// ---------- Notifications ---------------------------------------------------
-
-function EmptyNotifications() {
-  return (
-    <div
-      className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground"
-      style={{ borderColor: "var(--border)" }}
-    >
-      No fire detections recorded.
-      <p className="text-[11px] mt-1">
-        Detections appear here as soon as any live feed&apos;s YOLO detector
-        crosses the confidence threshold.
-      </p>
-    </div>
-  );
-}
-
-function NotificationRow({
-  notification,
-  onDelete,
-}: {
-  notification: MonitoringNotification;
-  onDelete: () => void;
-}) {
-  const n = notification;
-  const sourceIcon =
-    n.source === "drone" ? (
-      <Plane className="h-3 w-3" />
-    ) : (
-      <Camera className="h-3 w-3" />
-    );
-
-  return (
-    <li
-      className="flex items-center gap-3 rounded-md border px-3 py-2"
-      style={{ borderColor: "var(--border)", background: "var(--muted)" }}
-    >
-      {n.image ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={apiUrl(n.image)}
-          alt={`${n.source} detection at ${n.time_str}`}
-          className="h-12 w-16 object-cover rounded border"
-          style={{ borderColor: "var(--border)" }}
-        />
-      ) : (
-        <div
-          className="h-12 w-16 rounded border flex items-center justify-center"
-          style={{ borderColor: "var(--border)", background: "var(--card)" }}
-        >
-          <Camera
-            className="h-4 w-4"
-            style={{ color: "var(--muted-foreground)" }}
-          />
-        </div>
-      )}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <Badge
-            variant="outline"
-            className="text-[10px] flex items-center gap-1"
-          >
-            {sourceIcon}
-            {n.source}
-          </Badge>
-          <span className="text-[11px] text-muted-foreground font-mono-ent">
-            {n.time_str}
-          </span>
-        </div>
-        <p className="text-[11px] text-muted-foreground mt-0.5">
-          {n.detection_count} detection{n.detection_count === 1 ? "" : "s"} ·
-          max confidence{" "}
-          <span className="font-mono-ent text-foreground">
-            {(n.max_confidence * 100).toFixed(0)}%
-          </span>
-        </p>
-      </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onDelete}
-        title="Delete"
-        className="h-8 w-8 p-0 shrink-0"
-      >
-        <Trash2 className="h-4 w-4" aria-hidden />
-        <span className="sr-only">Delete</span>
-      </Button>
-    </li>
-  );
-}

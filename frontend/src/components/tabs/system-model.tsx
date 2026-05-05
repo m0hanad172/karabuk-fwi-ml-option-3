@@ -40,6 +40,69 @@ export function SystemModel() {
 
   return (
     <div className="space-y-6">
+      {/* ---------- Summary ---------- */}
+      <div className="ent-card p-5">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+          <div>
+            <p className="ent-eyebrow">System / Model</p>
+            <h3 className="font-display text-lg font-semibold leading-none mt-1 flex items-center gap-2">
+              <Brain
+                className="h-4 w-4"
+                style={{ color: "var(--primary)" }}
+              />
+              Daily Risk Model
+            </h3>
+            <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
+              The model uses daily aggregate weather features. Scheduled
+              checks refresh the daily risk decision.
+            </p>
+          </div>
+          <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
+            Daily Inputs
+          </Badge>
+        </div>
+
+        {model.error && !m ? (
+          <ErrorAlert
+            title="Could not load model summary"
+            message={model.error}
+            onRetry={model.refetch}
+            compact
+          />
+        ) : model.loading && !m ? (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <Skeleton key={index} className="h-20" />
+            ))}
+          </div>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <SummaryInfo label="Model Type" value={m?.stage1_model ?? "Stacked v3"} />
+            <SummaryInfo label="Risk Target" value="FWI >= 35" />
+            <SummaryInfo label="Input Type" value="Daily Aggregates" />
+            <SummaryInfo
+              label="Feature Count"
+              value={m ? String(m.n_training_features) : "—"}
+              mono
+            />
+            <SummaryInfo
+              label="Decision Threshold"
+              value={m ? String(m.thresholds.high_threshold) : "35"}
+              mono
+            />
+            <SummaryInfo
+              label="Runtime Checks"
+              value={h ? `${h.stage1_model_loaded && h.stage2_model_loaded ? "Models OK" : "Model check"} · ${h.database_ok ? "DB OK" : "DB check"}` : "—"}
+            />
+            <SummaryInfo
+              label="Training/Runtime Alignment"
+              value={h?.stage1_model_loaded && h.stage2_model_loaded && h.database_ok ? "Ready" : "Check"}
+              mono
+            />
+          </div>
+        )}
+      </div>
+
       {/* ---------- Health ---------- */}
       <div className="ent-card p-5">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
@@ -220,6 +283,28 @@ export function SystemModel() {
         )}
       </div>
 
+      {/* ---------- Feature groups ---------- */}
+      <div className="ent-card p-5">
+        <div className="mb-4">
+          <p className="ent-eyebrow">Features</p>
+          <h3 className="font-display text-lg font-semibold leading-none mt-1">
+            Model Input Groups
+          </h3>
+          <p className="text-xs text-muted-foreground mt-1">
+            Compact view of the daily aggregate inputs used by the runtime
+            prediction path.
+          </p>
+        </div>
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {[
+            ...FEATURE_GROUPS,
+            stage2FeatureGroup(m?.stage2_input_features),
+          ].map((group) => (
+            <FeatureGroupCard key={group.title} {...group} />
+          ))}
+        </div>
+      </div>
+
       {/* ---------- Scheduler ---------- */}
       <div className="ent-card p-5">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
@@ -233,8 +318,8 @@ export function SystemModel() {
               Scheduler Status
             </h3>
             <p className="text-xs text-muted-foreground mt-1">
-              Two scheduled operational slots at 11:00 and 15:00
-              Europe/Istanbul. Both are always registered at boot.
+              Scheduled operational checks at 09:00, 11:00 and 15:00
+              Europe/Istanbul. Jobs are registered at backend startup.
             </p>
           </div>
           {s && (
@@ -306,6 +391,220 @@ export function SystemModel() {
 }
 
 // ---------- helpers ---------------------------------------------------------
+
+const FEATURE_GROUPS = [
+  {
+    title: "Weather Inputs",
+    features: [
+      {
+        name: "temperature",
+        meaning: "Daily max air temperature",
+        source: "temperature_2m_max",
+      },
+      {
+        name: "rh",
+        meaning: "Daily minimum humidity",
+        source: "relative_humidity_2m_min",
+      },
+      {
+        name: "ws",
+        meaning: "Daily max wind speed",
+        source: "wind_speed_10m_max",
+      },
+      {
+        name: "precip",
+        meaning: "Daily precipitation total",
+        source: "precipitation_sum",
+      },
+    ],
+  },
+  {
+    title: "Seasonal Features",
+    features: [
+      {
+        name: "month",
+        meaning: "Calendar season signal",
+        source: "target date month",
+      },
+      {
+        name: "day_of_year",
+        meaning: "Annual progression signal",
+        source: "target date ordinal",
+      },
+      {
+        name: "season",
+        meaning: "Fire season context",
+        source: "derived from month",
+      },
+    ],
+  },
+  {
+    title: "Fire Weather Features",
+    features: [
+      {
+        name: "vpd",
+        meaning: "Atmospheric drying pressure",
+        source: "es x (1 - RH/100)",
+      },
+      {
+        name: "hdw",
+        meaning: "Heat-dry-wind index",
+        source: "vpd x wind",
+      },
+      {
+        name: "fuel_drying_rate",
+        meaning: "Drying tendency estimate",
+        source: "temp x (100 - RH)",
+      },
+      {
+        name: "wind_squared",
+        meaning: "Wind intensity effect",
+        source: "ws^2",
+      },
+      {
+        name: "dew_point",
+        meaning: "Moisture condensation point",
+        source: "derived from temp/RH",
+      },
+    ],
+  },
+  {
+    title: "Rolling History",
+    features: [
+      {
+        name: "precip_sum_7d",
+        meaning: "Weekly rain accumulation",
+        source: "rolling 7-day precip sum",
+      },
+      {
+        name: "t_mean_7d",
+        meaning: "Weekly temperature mean",
+        source: "rolling 7-day temp mean",
+      },
+      {
+        name: "rh_min_7d",
+        meaning: "Weekly dry humidity",
+        source: "rolling 7-day RH min",
+      },
+      {
+        name: "ws_max_7d",
+        meaning: "Weekly peak wind",
+        source: "rolling 7-day wind max",
+      },
+    ],
+  },
+  {
+    title: "Stage 1 Regression",
+    features: [
+      {
+        name: "model_features",
+        meaning: "Main FWI predictors",
+        source: "daily weather + engineered features",
+      },
+      {
+        name: "validation_flags",
+        meaning: "Input quality checks",
+        source: "runtime feature validation",
+      },
+    ],
+  },
+] as const;
+
+function stage2FeatureGroup(features?: readonly string[]) {
+  const values =
+    features && features.length > 0
+      ? features
+      : ["predicted_fwi", "near_threshold_flag"];
+  return {
+    title: "Stage 2 Classifier Support",
+    features: values.map((feature) => ({
+      name: feature,
+      meaning: stage2Meaning(feature),
+      source: stage2Source(feature),
+    })),
+  };
+}
+
+function stage2Meaning(feature: string): string {
+  if (feature.includes("prob")) return "Classifier confidence input";
+  if (feature.includes("threshold")) return "Decision boundary support";
+  if (feature.includes("fwi")) return "Stage 1 FWI estimate";
+  return "Classifier support feature";
+}
+
+function stage2Source(feature: string): string {
+  if (feature.includes("fwi")) return "Stage 1 output";
+  if (feature.includes("threshold")) return "decision thresholds";
+  return "engineered runtime feature";
+}
+
+function SummaryInfo({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div
+      className="rounded-md border px-4 py-3"
+      style={{
+        borderColor: "var(--border)",
+        background: "var(--muted)",
+      }}
+    >
+      <p className="ent-eyebrow">{label}</p>
+      <p
+        className={`mt-2 truncate text-sm font-medium ${mono ? "font-mono-ent" : ""}`}
+        title={value}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function FeatureGroupCard({
+  title,
+  features,
+}: {
+  title: string;
+  features: readonly {
+    name: string;
+    meaning: string;
+    source: string;
+  }[];
+}) {
+  return (
+    <div
+      className="rounded-md border px-4 py-3"
+      style={{
+        borderColor: "var(--border)",
+        background: "var(--muted)",
+      }}
+    >
+      <p className="font-medium text-sm">{title}</p>
+      <div className="mt-3 space-y-2">
+        {features.map((feature) => (
+          <div
+            key={feature.name}
+            className="grid grid-cols-[minmax(7rem,0.9fr)_minmax(8rem,1.1fr)] gap-x-3 gap-y-0.5 text-xs"
+          >
+            <span className="font-mono-ent text-foreground truncate" title={feature.name}>
+              {feature.name}
+            </span>
+            <span className="text-muted-foreground">{feature.meaning}</span>
+            <span className="col-span-2 text-[11px] text-muted-foreground/80 truncate" title={feature.source}>
+              {feature.source}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function HealthItem({ label, ok }: { label: string; ok: boolean }) {
   return (

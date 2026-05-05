@@ -92,6 +92,11 @@ Be specific and honest. Suggested points:
   and defaults to mock mode.
 - Physical drone movement is operator-controlled. Stream start does not mean
   takeoff.
+- The demo patrol trigger is separate from the production wildfire risk
+  decision. It allows the drone workflow to be tested during low-risk days
+  without changing the real High Risk threshold.
+- The controlled Tello demo route is short, configurable, and requires
+  operator confirmation before physical launch.
 - The current scheduler runs the 09:00, 11:00, and 15:00 risk checks.
 - The 30-minute Drone Patrol Cycle is documented as the operational
   design and partially modelled (`DRONE_INTERVAL_MINUTES`,

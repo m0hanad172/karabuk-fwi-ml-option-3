@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-05-05 - Demo-only drone patrol trigger
+
+- Added a safe `POST /drone/demo-patrol` endpoint for presentation/testing.
+- Mock demo patrol works without hardware and does not write to `run_history`.
+- Tello demo patrol remains blocked by default and requires explicit config,
+  connection, battery, takeoff permission, and operator confirmation.
+- Added the Overview **Run Demo Patrol** button and visible demo status message.
+- Production High Risk threshold and scheduler logic are unchanged.
+
 ## 2026-05-04 - Operator-controlled drone-ready adapter
 
 - Added a mock-first drone adapter layer under `backend/src/drone/`.

@@ -121,6 +121,45 @@ class TelloDroneController:
         self.last_error = f"Manual command '{command}' is not implemented for Tello"
         return self.get_status()
 
+    def demo_patrol(self, move_cm: int, up_cm: int, delay_seconds: float) -> list[str]:
+        """Run the short controlled Tello demo patrol after service gates pass.
+
+        Edit this function to change the controlled Tello demo patrol path.
+        Tello movement values are centimeters. Keep distances conservative.
+        """
+        if self._tello is None or not self.connected:
+            raise RuntimeError("Tello is not connected")
+
+        route: list[tuple[str, tuple[int, ...]]] = [
+            ("takeoff", ()),
+            ("move_up", (up_cm,)),
+            ("move_forward", (move_cm,)),
+            ("move_right", (move_cm,)),
+            ("move_back", (move_cm,)),
+            ("move_left", (move_cm,)),
+            ("land", ()),
+        ]
+        executed: list[str] = []
+        try:
+            for command, args in route:
+                getattr(self._tello, command)(*args)
+                executed.append(
+                    command if not args else f"{command} {args[0]}cm"
+                )
+                time.sleep(delay_seconds)
+        except Exception as e:  # noqa: BLE001
+            self.last_error = f"Tello demo patrol failed: {e}"
+            logger.warning(self.last_error)
+            try:
+                self._tello.land()
+                executed.append("land_after_error")
+            except Exception as land_error:  # noqa: BLE001
+                logger.warning("Tello land after demo failure failed: %s", land_error)
+            raise
+        finally:
+            self.stream_active = False
+        return executed
+
     def emergency_stop(self) -> DroneStatus:
         if self._tello is not None and self.connected:
             try:
