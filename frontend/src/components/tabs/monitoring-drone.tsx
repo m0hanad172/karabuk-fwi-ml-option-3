@@ -443,10 +443,10 @@ function PolicyTile({
 export function LiveFeedsPanel() {
   return (
     <section>
-      <div className="flex items-end justify-between mb-3">
+      <div className="flex items-end justify-between mb-2">
         <div>
           <p className="ent-eyebrow">Live Feeds</p>
-          <h3 className="font-display text-lg font-semibold leading-none mt-1">
+          <h3 className="font-display text-base font-semibold leading-none mt-1">
             Detection Console
           </h3>
         </div>
@@ -457,7 +457,7 @@ export function LiveFeedsPanel() {
           Fire detection only — never writes predicted_fwi
         </Badge>
       </div>
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-3 lg:grid-cols-3">
         <DroneFeedCard />
         <CameraFeedCard
           camId="webcam"
@@ -722,12 +722,12 @@ function FeedCard({
   return (
     <div className="ent-card flex flex-col overflow-hidden">
       <div
-        className="flex items-center gap-3 px-4 py-3 border-b"
+        className="flex items-center gap-2 px-3 py-2.5 border-b"
         style={{ background: "var(--muted)" }}
       >
         <span
           aria-hidden
-          className="flex h-8 w-8 items-center justify-center rounded-md"
+          className="flex h-7 w-7 items-center justify-center rounded-md"
           style={{
             background: "rgba(7, 44, 44, 0.08)",
             color: "var(--primary)",
@@ -765,9 +765,9 @@ function FeedCard({
         </div>
       </div>
 
-      <div className="p-3">
+      <div className="p-2.5">
         <div
-          className="relative aspect-video rounded-md overflow-hidden border flex items-center justify-center"
+          className="relative h-[170px] sm:h-[190px] xl:h-[205px] rounded-md overflow-hidden border flex items-center justify-center"
           style={{
             borderColor: "var(--border)",
             background: "#0A1414",
@@ -815,7 +815,7 @@ function FeedCard({
         )}
       </div>
 
-      <div className="mt-auto px-3 pb-3 flex gap-2">
+      <div className="mt-auto px-2.5 pb-2.5 flex gap-2">
         <Button
           size="sm"
           variant={running ? "outline" : "default"}
