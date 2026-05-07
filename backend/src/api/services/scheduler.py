@@ -99,15 +99,33 @@ def start_scheduler():
             id=f"scheduled_{slot}_run",
             name=f"Scheduled {slot} run ({hour:02d}:00)",
             replace_existing=True,
+            # The default APScheduler misfire grace is 1 second. On a
+            # laptop that suspends/resumes (or any host whose scheduler
+            # thread blocks past the trigger) every cron slot in the
+            # past second is silently skipped — which is the most
+            # common reason scheduled rows never appear in run_history
+            # while the backend is "running". Ten minutes of grace +
+            # coalesce=True catches a delayed slot once and never
+            # backfills more than the most-recent missed slot.
+            misfire_grace_time=600,
+            coalesce=True,
         )
         logger.info(
-            "Registered scheduled risk check job id=%s hour=%02d:00 timezone=%s",
+            "Registered scheduled risk check job id=%s hour=%02d:00 "
+            "timezone=%s misfire_grace=600s coalesce=True",
             f"scheduled_{slot}_run",
             hour,
             _timezone_label(),
         )
 
     _scheduler.start()
+    for job in _scheduler.get_jobs():
+        next_run = job.next_run_time
+        logger.info(
+            "Scheduler boot: job id=%s next_run=%s",
+            job.id,
+            next_run.isoformat() if next_run else "—",
+        )
     logger.info(
         "Scheduler started with %d operational slots: %s timezone=%s db=%s",
         len(SCHEDULED_RUN_HOURS),
@@ -126,15 +144,33 @@ def stop_scheduler():
 
 
 def get_scheduler_status() -> dict:
+    """Snapshot of the operational scheduler.
+
+    Shape:
+      ``running``           — bool, whether APScheduler's thread is alive.
+      ``timezone``          — string label, e.g. "Europe/Istanbul".
+      ``configured_hours``  — list[int] from ``SCHEDULED_RUN_HOURS``.
+      ``jobs``              — list of {id, name, next_run_time} entries.
+
+    The extra ``timezone`` and ``configured_hours`` fields are consumed
+    by the dashboard's Operational Schedule card and by the
+    ``trigger_scheduled_run.py`` diagnostic helper — they make it
+    obvious at a glance whether the running scheduler matches the
+    configured slots.
+    """
+    base = {
+        "timezone": _timezone_label(),
+        "configured_hours": list(SCHEDULED_RUN_HOURS),
+    }
     if _scheduler is None:
-        return {"running": False, "jobs": []}
+        return {"running": False, "jobs": [], **base}
     jobs = []
     for job in _scheduler.get_jobs():
         next_run = job.next_run_time
         # APScheduler returns a tz-aware datetime when the scheduler's
         # timezone is set. .isoformat() emits a strict ISO 8601 string
-        # with an explicit offset (e.g. "2026-04-15T11:00:00+03:00"), which
-        # the frontend's `new Date(...)` parses unambiguously.
+        # with an explicit offset (e.g. "2026-04-15T11:00:00+03:00"),
+        # which the frontend's `new Date(...)` parses unambiguously.
         jobs.append(
             {
                 "id": job.id,
@@ -142,4 +178,4 @@ def get_scheduler_status() -> dict:
                 "next_run_time": next_run.isoformat() if next_run else None,
             }
         )
-    return {"running": _scheduler.running, "jobs": jobs}
+    return {"running": _scheduler.running, "jobs": jobs, **base}
