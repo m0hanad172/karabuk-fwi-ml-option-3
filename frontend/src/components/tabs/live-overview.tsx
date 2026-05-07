@@ -163,7 +163,7 @@ function CompactTopSummary({
     <section className="ent-card p-3" aria-label="Current operations summary">
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
-          <p className="ent-eyebrow">Overview</p>
+          <p className="ent-eyebrow">Live Monitoring</p>
           <h3 className="font-display text-base font-semibold leading-none mt-1">
             Current Status
           </h3>

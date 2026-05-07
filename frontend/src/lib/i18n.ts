@@ -95,7 +95,7 @@ export const DICT: Record<Lang, Dict> = {
     },
     nav: {
       overview: {
-        label: "Overview",
+        label: "Live Monitoring",
         sub: "Executive operational summary for Karabük fire risk.",
       },
       impact: {
@@ -178,7 +178,7 @@ export const DICT: Record<Lang, Dict> = {
     },
     nav: {
       overview: {
-        label: "Genel Bakış",
+        label: "Canlı İzleme",
         sub: "Karabük yangın riski operasyonel özeti.",
       },
       impact: {
