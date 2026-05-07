@@ -19,6 +19,7 @@ import {
   Globe2,
   History,
   LayoutDashboard,
+  MapPinned,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
@@ -26,6 +27,7 @@ import {
 export type SectionId =
   | "overview"
   | "impact"
+  | "risk-map"
   | "risk"
   | "features"
   | "analytics"
@@ -46,6 +48,7 @@ export interface NavItem {
 export const NAV_ITEMS: readonly NavItem[] = [
   { id: "overview", group: "Main", icon: LayoutDashboard },
   { id: "impact", group: "Main", icon: Globe2 },
+  { id: "risk-map", group: "Main", icon: MapPinned },
   { id: "risk", group: "Main", icon: Gauge },
   { id: "analytics", group: "Main", icon: BarChart3 },
   { id: "history", group: "Operations", icon: History },

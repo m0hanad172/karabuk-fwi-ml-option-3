@@ -16,35 +16,13 @@ import {
   Users,
   UsersRound,
 } from "lucide-react";
-import dynamic from "next/dynamic";
 import Image from "next/image";
 
 import { Badge } from "@/components/ui/badge";
 
-const BurnedAreaMap = dynamic(
-  () =>
-    import("@/components/maps/BurnedAreaMap").then((mod) => mod.BurnedAreaMap),
-  {
-    ssr: false,
-    loading: () => (
-      <section className="ent-card p-5" aria-label="Loading burned-area map">
-        <div
-          className="flex min-h-[320px] items-center justify-center rounded-lg border px-5 text-center"
-          style={{ background: "var(--muted)", borderColor: "var(--border)" }}
-        >
-          <div>
-            <p className="font-display text-base font-semibold">
-              Loading burned-area map
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Preparing the interactive Leaflet map.
-            </p>
-          </div>
-        </div>
-      </section>
-    ),
-  },
-);
+// The interactive 2025 burned-area map now lives on its own
+// "Risk Map" tab (frontend/src/components/tabs/risk-map.tsx) so this
+// page stays focused on impact narrative and history.
 
 /**
  * Impact & Context — motivation page.
@@ -63,7 +41,6 @@ export function ImpactContext() {
       <Hero />
       <LocalImpactSection />
       <LocalAreaChips />
-      <BurnedAreaMap />
       <HistoricalContextSection />
       <SourcesFooter />
     </div>

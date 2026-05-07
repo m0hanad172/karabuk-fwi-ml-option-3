@@ -43,6 +43,7 @@ export interface Dict {
   nav: Record<
     | "overview"
     | "impact"
+    | "risk-map"
     | "risk"
     | "features"
     | "analytics"
@@ -100,6 +101,10 @@ export const DICT: Record<Lang, Dict> = {
       impact: {
         label: "Impact & Context",
         sub: "Why this system matters — 2025 Karabük wildfire impact and motivation.",
+      },
+      "risk-map": {
+        label: "Risk Map",
+        sub: "Detected burned areas after the 2025 wildfire period using Sentinel-2 imagery and machine learning.",
       },
       risk: {
         label: "Risk Decision",
@@ -179,6 +184,10 @@ export const DICT: Record<Lang, Dict> = {
       impact: {
         label: "Etki ve Bağlam",
         sub: "Sistem neden var — 2025 Karabük yangını etkisi ve motivasyonu.",
+      },
+      "risk-map": {
+        label: "Risk Haritası",
+        sub: "Sentinel-2 görüntüleri ve makine öğrenmesi ile 2025 yangın sonrası tespit edilen yanmış alanlar.",
       },
       risk: {
         label: "Risk Kararı",

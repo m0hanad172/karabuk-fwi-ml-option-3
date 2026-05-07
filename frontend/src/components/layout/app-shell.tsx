@@ -10,6 +10,7 @@ import { ImpactContext } from "@/components/tabs/impact-context";
 import { LiveOverview } from "@/components/tabs/live-overview";
 import { MonitoringDrone } from "@/components/tabs/monitoring-drone";
 import { RiskDecision } from "@/components/tabs/risk-decision";
+import { RiskMap } from "@/components/tabs/risk-map";
 import { RunHistory } from "@/components/tabs/run-history";
 import { SystemFlow } from "@/components/tabs/system-flow";
 import { SystemModel } from "@/components/tabs/system-model";
@@ -119,6 +120,12 @@ function SectionRenderer({ id }: { id: SectionId }) {
       return (
         <ErrorBoundary fallbackTitle="Impact & Context failed to load">
           <ImpactContext />
+        </ErrorBoundary>
+      );
+    case "risk-map":
+      return (
+        <ErrorBoundary fallbackTitle="Risk Map failed to load">
+          <RiskMap />
         </ErrorBoundary>
       );
     case "risk":
