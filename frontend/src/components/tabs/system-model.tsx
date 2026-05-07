@@ -1,763 +1,492 @@
 "use client";
 
-import { Brain, Clock, Database, Server, Shield, Sliders } from "lucide-react";
-
-import { Badge } from "@/components/ui/badge";
-import { ErrorAlert } from "@/components/ui/error-alert";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { useApi } from "@/hooks/use-api";
-import { api } from "@/lib/api";
-import { formatIstanbulTime } from "@/lib/time";
+import { ArrowRight, Brain, Layers, Shield } from "lucide-react";
 
 /**
- * System & Model — operator-facing view of backend health, model
- * metadata, decision thresholds and the APScheduler state.
+ * System & Model — model card and feature catalogue.
  *
- * Phase 4 rewrite: this tab was the last piece of the UI still using
- * stock shadcn `Card` primitives and raw Tailwind colour utilities.
- * Every surface now uses the enterprise `ent-card`/eyebrow pattern,
- * `var(--…)` tokens, `font-mono-ent` for numeric/monospace cells, and
- * `ErrorAlert` / `Skeleton` for the failure and loading states.
+ * This tab is strictly an explainer for the trained two-stage stacked
+ * pipeline. All numbers (test metrics, confusion-matrix counts) come
+ * from the committed model metadata at
+ * `backend/models/metadata/stage{1,2}_metadata.json`. The 34 training
+ * feature names come straight from
+ * `backend/src/features/feature_schema.py::TRAINING_FEATURES`. No
+ * feature names are invented; every formula matches
+ * `backend/src/features/build_features.py`.
  *
- * Data bindings are unchanged — this is purely a visual normalisation.
+ * Architecture note: this tab does NOT talk to the backend. It is a
+ * static reference page so it never goes blank if the backend is
+ * unreachable — operators that need live runtime info use Overview /
+ * Run History / System Flow.
  */
 export function SystemModel() {
-  const health = useApi(() => api.getHealth(), [], 30_000);
-  const model = useApi(() => api.getModelInfo(), []);
-  const scheduler = useApi(() => api.getScheduler(), [], 30_000);
-
-  const h = health.data;
-  const m = model.data;
-  const s = scheduler.data;
-
   return (
     <div className="space-y-6">
-      {/* ---------- Summary ---------- */}
-      <div className="ent-card p-5">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-          <div>
-            <p className="ent-eyebrow">System / Model</p>
-            <h3 className="font-display text-lg font-semibold leading-none mt-1 flex items-center gap-2">
-              <Brain
-                className="h-4 w-4"
-                style={{ color: "var(--primary)" }}
-              />
-              Daily Risk Model
-            </h3>
-            <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
-              The model uses daily aggregate weather features. Scheduled
-              checks refresh the daily risk decision.
-            </p>
-          </div>
-          <Badge variant="outline" className="text-[10px] uppercase tracking-wider">
-            Daily Inputs
-          </Badge>
-        </div>
-
-        {model.error && !m ? (
-          <ErrorAlert
-            title="Could not load model summary"
-            message={model.error}
-            onRetry={model.refetch}
-            compact
-          />
-        ) : model.loading && !m ? (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {Array.from({ length: 8 }).map((_, index) => (
-              <Skeleton key={index} className="h-20" />
-            ))}
-          </div>
-        ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <SummaryInfo label="Model Type" value={m?.stage1_model ?? "Stacked v3"} />
-            <SummaryInfo label="Risk Target" value="FWI >= 35" />
-            <SummaryInfo label="Input Type" value="Daily Aggregates" />
-            <SummaryInfo
-              label="Feature Count"
-              value={m ? String(m.n_training_features) : "—"}
-              mono
-            />
-            <SummaryInfo
-              label="Decision Threshold"
-              value={m ? String(m.thresholds.high_threshold) : "35"}
-              mono
-            />
-            <SummaryInfo
-              label="Runtime Checks"
-              value={h ? `${h.stage1_model_loaded && h.stage2_model_loaded ? "Models OK" : "Model check"} · ${h.database_ok ? "DB OK" : "DB check"}` : "—"}
-            />
-            <SummaryInfo
-              label="Training/Runtime Alignment"
-              value={h?.stage1_model_loaded && h.stage2_model_loaded && h.database_ok ? "Ready" : "Check"}
-              mono
-            />
-          </div>
-        )}
+      <SystemSummary />
+      <PipelineFlow />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Stage1Card />
+        <Stage2Card />
       </div>
-
-      {/* ---------- Health ---------- */}
-      <div className="ent-card p-5">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-          <div>
-            <p className="ent-eyebrow">Runtime</p>
-            <h3 className="font-display text-lg font-semibold leading-none mt-1 flex items-center gap-2">
-              <Server
-                className="h-4 w-4"
-                style={{ color: "var(--primary)" }}
-              />
-              System Health
-            </h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Live status of Stage 1, Stage 2 and the SQLite audit log.
-              Auto-refreshes every 30 seconds.
-            </p>
-          </div>
-          {h && (
-            <Badge
-              variant={h.status === "healthy" ? "default" : "destructive"}
-              className="text-[10px] uppercase tracking-wider self-start md:self-center"
-            >
-              <span
-                aria-hidden
-                className="ent-status-dot mr-1.5"
-                style={{
-                  background:
-                    h.status === "healthy"
-                      ? "var(--success)"
-                      : "var(--destructive)",
-                }}
-              />
-              {h.status}
-            </Badge>
-          )}
-        </div>
-
-        {health.error && !h ? (
-          <ErrorAlert
-            title="Backend unreachable"
-            message={health.error}
-            onRetry={health.refetch}
-          />
-        ) : h ? (
-          <>
-            <div className="grid sm:grid-cols-3 gap-3">
-              <HealthItem label="Stage 1 model" ok={h.stage1_model_loaded} />
-              <HealthItem label="Stage 2 model" ok={h.stage2_model_loaded} />
-              <HealthItem label="Audit database" ok={h.database_ok} />
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-4 flex items-center gap-1.5">
-              <Clock className="h-3 w-3" aria-hidden />
-              Checked{" "}
-              <span className="font-mono-ent text-foreground">
-                {formatIstanbulTime(h.timestamp)}
-              </span>
-            </p>
-          </>
-        ) : (
-          <div className="grid sm:grid-cols-3 gap-3">
-            <Skeleton className="h-6" />
-            <Skeleton className="h-6" />
-            <Skeleton className="h-6" />
-          </div>
-        )}
-      </div>
-
-      {/* ---------- Model metadata ---------- */}
-      <div className="grid md:grid-cols-2 gap-6">
-        <ModelCard
-          eyebrow="Stage 1"
-          title="Regression backbone"
-          icon={<Brain className="h-4 w-4" style={{ color: "var(--primary)" }} />}
-          loading={model.loading}
-          error={model.error}
-          onRetry={model.refetch}
-        >
-          {m && (
-            <>
-              <MetaLine label="Model" value={m.stage1_model} />
-              <MetaLine
-                label="Training features"
-                value={String(m.n_training_features)}
-              />
-              {m.stage1_test_metrics && (
-                <MetricsTable metrics={m.stage1_test_metrics} />
-              )}
-            </>
-          )}
-        </ModelCard>
-
-        <ModelCard
-          eyebrow="Stage 2"
-          title="Safety classifier"
-          icon={
-            <Shield
-              className="h-4 w-4"
-              style={{ color: "var(--secondary)" }}
-            />
-          }
-          loading={model.loading}
-          error={model.error}
-          onRetry={model.refetch}
-        >
-          {m && (
-            <>
-              <MetaLine label="Model" value={m.stage2_model} />
-              <MetaLine
-                label="Stage 2 input"
-                value={m.stage2_input_features.join(", ")}
-                mono
-              />
-              {m.stage2_test_metrics && (
-                <MetricsTable metrics={m.stage2_test_metrics} />
-              )}
-            </>
-          )}
-        </ModelCard>
-      </div>
-
-      {/* ---------- Thresholds ---------- */}
-      <div className="ent-card p-5">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <p className="ent-eyebrow">Decision rule</p>
-            <h3 className="font-display text-lg font-semibold leading-none mt-1 flex items-center gap-2">
-              <Sliders
-                className="h-4 w-4"
-                style={{ color: "var(--primary)" }}
-              />
-              Thresholds
-            </h3>
-            <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
-              The Stacked v3 rule promotes a day to HIGH_RISK when Stage 1 is
-              above the high threshold, or when Stage 1 lies in the grey
-              zone and Stage 2&apos;s probability clears the rescue bar.
-            </p>
-          </div>
-          <Badge
-            variant="outline"
-            className="text-[10px] uppercase tracking-wider"
-          >
-            Static
-          </Badge>
-        </div>
-
-        {m ? (
-          <div className="grid sm:grid-cols-3 gap-3">
-            <ThresholdTile
-              label="High threshold (FWI)"
-              value={m.thresholds.high_threshold}
-              hint="Stage 1 ≥ this ⇒ HIGH_RISK"
-            />
-            <ThresholdTile
-              label="Near threshold (FWI)"
-              value={m.thresholds.near_threshold}
-              hint="Stage 1 in [near, high) ⇒ grey zone"
-            />
-            <ThresholdTile
-              label="Probability threshold"
-              value={m.thresholds.probability_threshold}
-              hint="Stage 2 ≥ this in grey zone ⇒ rescue"
-            />
-          </div>
-        ) : model.error ? (
-          <ErrorAlert
-            title="Could not load thresholds"
-            message={model.error}
-            onRetry={model.refetch}
-            compact
-          />
-        ) : (
-          <div className="grid sm:grid-cols-3 gap-3">
-            <Skeleton className="h-20" />
-            <Skeleton className="h-20" />
-            <Skeleton className="h-20" />
-          </div>
-        )}
-      </div>
-
-      {/* ---------- Feature groups ---------- */}
-      <div className="ent-card p-5">
-        <div className="mb-4">
-          <p className="ent-eyebrow">Features</p>
-          <h3 className="font-display text-lg font-semibold leading-none mt-1">
-            Model Input Groups
-          </h3>
-          <p className="text-xs text-muted-foreground mt-1">
-            Compact view of the daily aggregate inputs used by the runtime
-            prediction path.
-          </p>
-        </div>
-        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {[
-            ...FEATURE_GROUPS,
-            stage2FeatureGroup(m?.stage2_input_features),
-          ].map((group) => (
-            <FeatureGroupCard key={group.title} {...group} />
-          ))}
-        </div>
-      </div>
-
-      {/* ---------- Scheduler ---------- */}
-      <div className="ent-card p-5">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-          <div>
-            <p className="ent-eyebrow">APScheduler</p>
-            <h3 className="font-display text-lg font-semibold leading-none mt-1 flex items-center gap-2">
-              <Database
-                className="h-4 w-4"
-                style={{ color: "var(--primary)" }}
-              />
-              Scheduler Status
-            </h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              Scheduled operational checks at 09:00, 11:00 and 15:00
-              Europe/Istanbul. Jobs are registered at backend startup.
-            </p>
-          </div>
-          {s && (
-            <Badge
-              variant={s.running ? "default" : "secondary"}
-              className="text-[10px] uppercase tracking-wider self-start md:self-center"
-            >
-              <span
-                aria-hidden
-                className="ent-status-dot mr-1.5"
-                style={{
-                  background: s.running
-                    ? "var(--success)"
-                    : "var(--muted-foreground)",
-                }}
-              />
-              {s.running ? "Active" : "Inactive"}
-            </Badge>
-          )}
-        </div>
-
-        {scheduler.error && !s ? (
-          <ErrorAlert
-            title="Could not read scheduler status"
-            message={scheduler.error}
-            onRetry={scheduler.refetch}
-          />
-        ) : s ? (
-          s.jobs.length > 0 ? (
-            <div
-              className="rounded-md border overflow-hidden"
-              style={{ borderColor: "var(--border)" }}
-            >
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Job</TableHead>
-                    <TableHead className="text-right">Next run</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {s.jobs.map((job) => (
-                    <TableRow key={job.id}>
-                      <TableCell className="text-sm">{job.name}</TableCell>
-                      <TableCell className="text-right font-mono-ent text-sm">
-                        {job.next_run_time
-                          ? formatIstanbulTime(job.next_run_time)
-                          : "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Scheduler is running but no jobs are registered.
-            </p>
-          )
-        ) : (
-          <div className="space-y-2">
-            <Skeleton className="h-6" />
-            <Skeleton className="h-6" />
-          </div>
-        )}
-      </div>
+      <FeatureCatalogue />
+      <AlignmentNote />
     </div>
   );
 }
 
-// ---------- helpers ---------------------------------------------------------
+// ---------- A. System Summary -------------------------------------------------
 
-const FEATURE_GROUPS = [
-  {
-    title: "Weather Inputs",
-    features: [
-      {
-        name: "temperature",
-        meaning: "Daily max air temperature",
-        source: "temperature_2m_max",
-      },
-      {
-        name: "rh",
-        meaning: "Daily minimum humidity",
-        source: "relative_humidity_2m_min",
-      },
-      {
-        name: "ws",
-        meaning: "Daily max wind speed",
-        source: "wind_speed_10m_max",
-      },
-      {
-        name: "precip",
-        meaning: "Daily precipitation total",
-        source: "precipitation_sum",
-      },
-    ],
-  },
-  {
-    title: "Seasonal Features",
-    features: [
-      {
-        name: "month",
-        meaning: "Calendar season signal",
-        source: "target date month",
-      },
-      {
-        name: "day_of_year",
-        meaning: "Annual progression signal",
-        source: "target date ordinal",
-      },
-      {
-        name: "season",
-        meaning: "Fire season context",
-        source: "derived from month",
-      },
-    ],
-  },
-  {
-    title: "Fire Weather Features",
-    features: [
-      {
-        name: "vpd",
-        meaning: "Atmospheric drying pressure",
-        source: "es x (1 - RH/100)",
-      },
-      {
-        name: "hdw",
-        meaning: "Heat-dry-wind index",
-        source: "vpd x wind",
-      },
-      {
-        name: "fuel_drying_rate",
-        meaning: "Drying tendency estimate",
-        source: "temp x (100 - RH)",
-      },
-      {
-        name: "wind_squared",
-        meaning: "Wind intensity effect",
-        source: "ws^2",
-      },
-      {
-        name: "dew_point",
-        meaning: "Moisture condensation point",
-        source: "derived from temp/RH",
-      },
-    ],
-  },
-  {
-    title: "Rolling History",
-    features: [
-      {
-        name: "precip_sum_7d",
-        meaning: "Weekly rain accumulation",
-        source: "rolling 7-day precip sum",
-      },
-      {
-        name: "t_mean_7d",
-        meaning: "Weekly temperature mean",
-        source: "rolling 7-day temp mean",
-      },
-      {
-        name: "rh_min_7d",
-        meaning: "Weekly dry humidity",
-        source: "rolling 7-day RH min",
-      },
-      {
-        name: "ws_max_7d",
-        meaning: "Weekly peak wind",
-        source: "rolling 7-day wind max",
-      },
-    ],
-  },
-  {
-    title: "Stage 1 Regression",
-    features: [
-      {
-        name: "model_features",
-        meaning: "Main FWI predictors",
-        source: "daily weather + engineered features",
-      },
-      {
-        name: "validation_flags",
-        meaning: "Input quality checks",
-        source: "runtime feature validation",
-      },
-    ],
-  },
-] as const;
-
-function stage2FeatureGroup(features?: readonly string[]) {
-  const values =
-    features && features.length > 0
-      ? features
-      : ["predicted_fwi", "near_threshold_flag"];
-  return {
-    title: "Stage 2 Classifier Support",
-    features: values.map((feature) => ({
-      name: feature,
-      meaning: stage2Meaning(feature),
-      source: stage2Source(feature),
-    })),
-  };
+function SystemSummary() {
+  const items: { label: string; value: string }[] = [
+    { label: "Model Type", value: "Two-stage stacked system" },
+    { label: "Target", value: "Daily wildfire risk / FWI" },
+    { label: "Input Type", value: "Daily aggregate weather features" },
+    { label: "Training Features", value: "34" },
+    { label: "Runtime Checks", value: "09:00 / 11:00 / 15:00" },
+    { label: "High-Risk Rule", value: "FWI ≥ 35" },
+    {
+      label: "Runtime Alignment",
+      value: "Daily aggregates, not hourly weather",
+    },
+  ];
+  return (
+    <section className="ent-card p-5" aria-labelledby="system-summary">
+      <div className="mb-4">
+        <p className="ent-eyebrow">System & Model</p>
+        <h3
+          id="system-summary"
+          className="mt-1 flex items-center gap-2 font-display text-lg font-semibold leading-none"
+        >
+          <Brain className="h-4 w-4" style={{ color: "var(--primary)" }} />
+          Model Card
+        </h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Static reference. Runtime numbers (next scheduled check, latest
+          FWI) live on the Overview tab.
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-7">
+        {items.map((it) => (
+          <SummaryTile key={it.label} label={it.label} value={it.value} />
+        ))}
+      </div>
+    </section>
+  );
 }
 
-function stage2Meaning(feature: string): string {
-  if (feature.includes("prob")) return "Classifier confidence input";
-  if (feature.includes("threshold")) return "Decision boundary support";
-  if (feature.includes("fwi")) return "Stage 1 FWI estimate";
-  return "Classifier support feature";
-}
-
-function stage2Source(feature: string): string {
-  if (feature.includes("fwi")) return "Stage 1 output";
-  if (feature.includes("threshold")) return "decision thresholds";
-  return "engineered runtime feature";
-}
-
-function SummaryInfo({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
+function SummaryTile({ label, value }: { label: string; value: string }) {
   return (
     <div
-      className="rounded-md border px-4 py-3"
-      style={{
-        borderColor: "var(--border)",
-        background: "var(--muted)",
-      }}
+      className="rounded-md border px-3 py-2"
+      style={{ background: "var(--muted)", borderColor: "var(--border)" }}
     >
-      <p className="ent-eyebrow">{label}</p>
-      <p
-        className={`mt-2 truncate text-sm font-medium ${mono ? "font-mono-ent" : ""}`}
-        title={value}
-      >
+      <p className="ent-eyebrow leading-tight">{label}</p>
+      <p className="mt-1 font-display text-sm font-semibold leading-snug">
         {value}
       </p>
     </div>
   );
 }
 
-function FeatureGroupCard({
-  title,
-  features,
-}: {
-  title: string;
-  features: readonly {
-    name: string;
-    meaning: string;
-    source: string;
-  }[];
-}) {
+// ---------- B. Pipeline Flow --------------------------------------------------
+
+function PipelineFlow() {
+  const stops = [
+    "Daily weather features",
+    "Stage 1 — Regression Backbone",
+    "predicted_fwi",
+    "Stage 2 — Safety Classifier",
+    "high-risk probability",
+    "Risk decision",
+  ];
   return (
-    <div
-      className="rounded-md border px-4 py-3"
-      style={{
-        borderColor: "var(--border)",
-        background: "var(--muted)",
-      }}
-    >
-      <p className="font-medium text-sm">{title}</p>
-      <div className="mt-3 space-y-2">
-        {features.map((feature) => (
-          <div
-            key={feature.name}
-            className="grid grid-cols-[minmax(7rem,0.9fr)_minmax(8rem,1.1fr)] gap-x-3 gap-y-0.5 text-xs"
-          >
-            <span className="font-mono-ent text-foreground truncate" title={feature.name}>
-              {feature.name}
-            </span>
-            <span className="text-muted-foreground">{feature.meaning}</span>
-            <span className="col-span-2 text-[11px] text-muted-foreground/80 truncate" title={feature.source}>
-              {feature.source}
-            </span>
-          </div>
-        ))}
+    <section className="ent-card p-5" aria-labelledby="pipeline-flow">
+      <div className="mb-3">
+        <p className="ent-eyebrow">Modelling Pipeline</p>
+        <h3
+          id="pipeline-flow"
+          className="mt-1 flex items-center gap-2 font-display text-lg font-semibold leading-none"
+        >
+          <Layers className="h-4 w-4" style={{ color: "var(--secondary)" }} />
+          From features to decision
+        </h3>
       </div>
-    </div>
+      <ol className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:gap-1.5">
+        {stops.map((label, idx) => (
+          <li
+            key={label}
+            className="flex items-center gap-1.5"
+            aria-label={`Step ${idx + 1}: ${label}`}
+          >
+            <span
+              className="rounded-md border px-2.5 py-1.5 text-[11px] font-medium leading-none"
+              style={{
+                background: "var(--muted)",
+                borderColor: "var(--border)",
+              }}
+            >
+              {label}
+            </span>
+            {idx < stops.length - 1 && (
+              <ArrowRight
+                className="h-3 w-3 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+            )}
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 
-function HealthItem({ label, ok }: { label: string; ok: boolean }) {
+// ---------- C/D. Stage cards --------------------------------------------------
+
+type StageMetric = { label: string; value: string };
+
+function Stage1Card() {
+  // Source: backend/models/metadata/stage1_metadata.json (test_metrics)
+  const metrics: StageMetric[] = [
+    { label: "RMSE", value: "7.259" },
+    { label: "MAE", value: "5.098" },
+    { label: "R²", value: "0.819" },
+  ];
   return (
-    <div
-      className="flex items-center gap-2 rounded-md border px-3 py-2"
-      style={{
-        borderColor: "var(--border)",
-        background: "var(--muted)",
-      }}
-    >
-      <span
-        aria-hidden
-        className="ent-status-dot"
-        style={{
-          background: ok ? "var(--success)" : "var(--destructive)",
-        }}
-      />
-      <span className="text-sm">{label}</span>
-      <span
-        className="ml-auto text-[10px] uppercase tracking-wider font-medium"
-        style={{
-          color: ok ? "var(--success)" : "var(--destructive)",
-        }}
-      >
-        {ok ? "OK" : "Down"}
-      </span>
-    </div>
+    <StageCard
+      eyebrow="Stage 1"
+      title="Regression Backbone"
+      icon={<Brain className="h-4 w-4" />}
+      iconColor="var(--primary)"
+      modelName="HistGradientBoostingRegressor"
+      input="34 daily weather + engineered features"
+      output="predicted_fwi (continuous daily FWI)"
+      metrics={metrics}
+      note="Stage 1 estimates the continuous daily FWI value."
+    />
   );
 }
 
-function MetaLine({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
+function Stage2Card() {
+  // Source: backend/models/metadata/stage2_metadata.json (test_metrics)
+  const metrics: StageMetric[] = [
+    { label: "Precision", value: "0.849" },
+    { label: "Recall", value: "0.900" },
+    { label: "F1", value: "0.874" },
+    { label: "Accuracy", value: "0.929" },
+    { label: "TP", value: "45" },
+    { label: "FP", value: "8" },
+    { label: "FN", value: "5" },
+    { label: "TN", value: "126" },
+  ];
   return (
-    <div className="flex items-start justify-between gap-3 text-sm">
-      <span className="text-muted-foreground shrink-0">{label}</span>
-      <span
-        className={`text-right break-words ${mono ? "font-mono-ent" : "font-medium"}`}
-      >
-        {value}
-      </span>
-    </div>
+    <StageCard
+      eyebrow="Stage 2"
+      title="Safety Classifier"
+      icon={<Shield className="h-4 w-4" />}
+      iconColor="var(--destructive)"
+      modelName="RandomForestClassifier (stacked)"
+      input="predicted_fwi + rh + ws + fuel_drying_rate"
+      output="high-risk probability + high-risk decision"
+      metrics={metrics}
+      note="Stage 2 supports Stage 1 by converting the predicted FWI and selected support features into a high-risk probability."
+    />
   );
 }
 
-function MetricsTable({ metrics }: { metrics: Record<string, number> }) {
-  return (
-    <div
-      className="mt-3 rounded-md border overflow-hidden"
-      style={{ borderColor: "var(--border)" }}
-    >
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="text-xs">Metric</TableHead>
-            <TableHead className="text-right text-xs">Value</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {Object.entries(metrics).map(([k, v]) => (
-            <TableRow key={k}>
-              <TableCell className="font-mono-ent text-xs">
-                {k.toUpperCase()}
-              </TableCell>
-              <TableCell className="text-right font-mono-ent text-xs">
-                {typeof v === "number"
-                  ? Number.isInteger(v)
-                    ? v
-                    : v.toFixed(3)
-                  : v}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
-
-function ModelCard({
+function StageCard({
   eyebrow,
   title,
   icon,
-  loading,
-  error,
-  onRetry,
-  children,
+  iconColor,
+  modelName,
+  input,
+  output,
+  metrics,
+  note,
 }: {
   eyebrow: string;
   title: string;
   icon: React.ReactNode;
-  loading: boolean;
-  error: string | null;
-  onRetry: () => void;
-  children: React.ReactNode;
+  iconColor: string;
+  modelName: string;
+  input: string;
+  output: string;
+  metrics: StageMetric[];
+  note: string;
 }) {
   return (
-    <div className="ent-card p-5">
-      <div className="mb-4">
+    <section className="ent-card p-5" aria-labelledby={`stage-${eyebrow}`}>
+      <div className="mb-3">
         <p className="ent-eyebrow">{eyebrow}</p>
-        <h3 className="font-display text-lg font-semibold leading-none mt-1 flex items-center gap-2">
-          {icon}
+        <h3
+          id={`stage-${eyebrow}`}
+          className="mt-1 flex items-center gap-2 font-display text-lg font-semibold leading-none"
+        >
+          <span style={{ color: iconColor }}>{icon}</span>
           {title}
         </h3>
       </div>
-      {error ? (
-        <ErrorAlert
-          title="Could not load model metadata"
-          message={error}
-          onRetry={onRetry}
-          compact
-        />
-      ) : loading ? (
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-4 w-1/2" />
-          <Skeleton className="h-16 w-full" />
+      <dl className="space-y-1.5 text-sm">
+        <KV k="Model" v={modelName} mono />
+        <KV k="Input" v={input} />
+        <KV k="Output" v={output} />
+      </dl>
+      <div className="mt-4">
+        <p className="ent-eyebrow mb-2">Test metrics</p>
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+          {metrics.map((m) => (
+            <div
+              key={m.label}
+              className="rounded-md border px-2.5 py-1.5"
+              style={{
+                background: "var(--muted)",
+                borderColor: "var(--border)",
+              }}
+            >
+              <p className="ent-eyebrow leading-tight">{m.label}</p>
+              <p className="mt-1 font-mono-ent text-sm font-semibold leading-none">
+                {m.value}
+              </p>
+            </div>
+          ))}
         </div>
-      ) : (
-        <div className="space-y-2">{children}</div>
-      )}
+      </div>
+      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+        {note}
+      </p>
+    </section>
+  );
+}
+
+function KV({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2">
+      <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">
+        {k}
+      </dt>
+      <dd className={mono ? "font-mono-ent text-sm" : "text-sm"}>{v}</dd>
     </div>
   );
 }
 
-function ThresholdTile({
-  label,
-  value,
-  hint,
+// ---------- E. Feature catalogue ----------------------------------------------
+
+type Feat = { name: string; meaning: string; source: string };
+
+// Real names from backend/src/features/feature_schema.py — never invented.
+// Formulas / derivations from backend/src/features/build_features.py.
+const RAW_FEATURES: Feat[] = [
+  { name: "temperature", meaning: "Daily temperature", source: "Open-Meteo daily" },
+  { name: "rh", meaning: "Daily relative humidity", source: "Open-Meteo daily" },
+  { name: "ws", meaning: "Daily wind speed", source: "Open-Meteo daily" },
+  { name: "precip", meaning: "Daily rainfall total", source: "Open-Meteo daily" },
+  {
+    name: "cloud_cover_mean",
+    meaning: "Daily mean cloud cover",
+    source: "Open-Meteo daily",
+  },
+  {
+    name: "shortwave_radiation_sum",
+    meaning: "Daily solar energy total",
+    source: "Open-Meteo daily",
+  },
+  {
+    name: "et0_fao_evapotranspiration",
+    meaning: "Reference evapotranspiration",
+    source: "Open-Meteo daily (FAO ET0)",
+  },
+  {
+    name: "soil_moisture_0_to_7cm_mean",
+    meaning: "Daily mean topsoil moisture",
+    source: "Open-Meteo soil-moisture daily",
+  },
+];
+
+const DERIVED_FEATURES: Feat[] = [
+  { name: "vpd", meaning: "Atmospheric drying pressure", source: "es × (1 − rh / 100)" },
+  {
+    name: "fuel_drying_rate",
+    meaning: "Fuel drying tendency",
+    source: "temperature × (1 − rh / 100)",
+  },
+  { name: "hdw", meaning: "Heat-dry-wind effect", source: "vpd × ws" },
+  { name: "wind_squared", meaning: "Wind energy proxy", source: "ws²" },
+  { name: "dew_point", meaning: "Dew point estimate", source: "temperature − (100 − rh) / 5" },
+];
+
+const SEASONAL_FEATURES: Feat[] = [
+  { name: "doy_sin", meaning: "Seasonal cycle signal", source: "sin(2π × dayofyear / 366)" },
+  { name: "doy_cos", meaning: "Seasonal cycle signal", source: "cos(2π × dayofyear / 366)" },
+  { name: "month_sin", meaning: "Monthly cycle signal", source: "sin(2π × month / 12)" },
+  { name: "month_cos", meaning: "Monthly cycle signal", source: "cos(2π × month / 12)" },
+];
+
+const ROLLING_FEATURES: Feat[] = [
+  { name: "precip_sum_3d", meaning: "3-day rainfall memory", source: "rolling sum of previous days" },
+  { name: "precip_sum_7d", meaning: "Weekly rainfall memory", source: "rolling sum of previous days" },
+  { name: "precip_sum_30d", meaning: "Monthly rainfall memory", source: "rolling sum of previous days" },
+  { name: "t_mean_3d", meaning: "3-day temperature trend", source: "rolling mean of previous days" },
+  { name: "t_mean_7d", meaning: "Weekly temperature trend", source: "rolling mean of previous days" },
+  { name: "rh_min_3d", meaning: "3-day driest humidity", source: "rolling min of previous days" },
+  { name: "rh_min_7d", meaning: "Weekly driest humidity", source: "rolling min of previous days" },
+  { name: "rh_mean_3d", meaning: "3-day humidity trend", source: "rolling mean of previous days" },
+  { name: "rh_mean_7d", meaning: "Weekly humidity trend", source: "rolling mean of previous days" },
+  { name: "ws_mean_3d", meaning: "3-day wind trend", source: "rolling mean of previous days" },
+  { name: "ws_mean_7d", meaning: "Weekly wind trend", source: "rolling mean of previous days" },
+  { name: "ws_max_3d", meaning: "3-day peak wind", source: "rolling max of previous days" },
+  { name: "ws_max_7d", meaning: "Weekly peak wind", source: "rolling max of previous days" },
+  { name: "ewma_t", meaning: "Smoothed temperature memory", source: "EWMA over previous days (α = 0.3)" },
+  { name: "ewma_rh", meaning: "Smoothed humidity memory", source: "EWMA over previous days (α = 0.5)" },
+  { name: "ewma_precip", meaning: "Smoothed rainfall memory", source: "EWMA over previous days (α = 0.7)" },
+  {
+    name: "consecutive_dry_days",
+    meaning: "Length of current dry streak",
+    source: "consecutive days with no rain",
+  },
+];
+
+const STAGE2_SUPPORT: Feat[] = [
+  { name: "predicted_fwi", meaning: "Stage 1 output", source: "from Stage 1 prediction" },
+  { name: "rh", meaning: "Daily relative humidity", source: "shared with Stage 1" },
+  { name: "ws", meaning: "Daily wind speed", source: "shared with Stage 1" },
+  { name: "fuel_drying_rate", meaning: "Fuel drying tendency", source: "shared with Stage 1" },
+];
+
+function FeatureCatalogue() {
+  return (
+    <section className="ent-card p-5" aria-labelledby="feature-catalogue">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <p className="ent-eyebrow">Feature Catalogue</p>
+          <h3
+            id="feature-catalogue"
+            className="mt-1 font-display text-lg font-semibold leading-none"
+          >
+            34 daily features used by Stage 1
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            8 raw API + 26 engineered. Stage 2 reuses three of them plus the
+            Stage 1 output.
+          </p>
+        </div>
+        <span
+          className="rounded-md border px-2.5 py-1 text-[11px] font-mono-ent"
+          style={{ background: "var(--muted)", borderColor: "var(--border)" }}
+        >
+          schema: feature_schema.py
+        </span>
+      </div>
+
+      <div className="space-y-4">
+        <FeatureGroup
+          title="Daily Weather Inputs"
+          subtitle="Raw API aggregates fetched at runtime."
+          count={RAW_FEATURES.length}
+          features={RAW_FEATURES}
+        />
+        <FeatureGroup
+          title="Fire-Weather Derived Features"
+          subtitle="Computed from the raw aggregates above."
+          count={DERIVED_FEATURES.length}
+          features={DERIVED_FEATURES}
+        />
+        <FeatureGroup
+          title="Seasonal Features"
+          subtitle="Sin/cos encodings of the calendar."
+          count={SEASONAL_FEATURES.length}
+          features={SEASONAL_FEATURES}
+        />
+        <FeatureGroup
+          title="Rolling / Lag Features"
+          subtitle="Short- and medium-term memory of weather behaviour."
+          count={ROLLING_FEATURES.length}
+          features={ROLLING_FEATURES}
+        />
+        <FeatureGroup
+          title="Stage 2 Support Features"
+          subtitle="Inputs the safety classifier reads, on top of Stage 1's output."
+          count={STAGE2_SUPPORT.length}
+          features={STAGE2_SUPPORT}
+        />
+      </div>
+    </section>
+  );
+}
+
+function FeatureGroup({
+  title,
+  subtitle,
+  count,
+  features,
 }: {
-  label: string;
-  value: number;
-  hint: string;
+  title: string;
+  subtitle: string;
+  count: number;
+  features: Feat[];
 }) {
   return (
     <div
-      className="rounded-md border px-4 py-3"
-      style={{
-        borderColor: "var(--border)",
-        background: "var(--muted)",
-      }}
+      className="rounded-md border"
+      style={{ borderColor: "var(--border)" }}
     >
-      <p className="ent-eyebrow">{label}</p>
-      <p className="font-display text-3xl font-semibold mt-1 font-mono-ent">
-        {value}
-      </p>
-      <p className="text-[11px] text-muted-foreground mt-1">{hint}</p>
+      <div
+        className="flex flex-wrap items-baseline justify-between gap-2 border-b px-4 py-2"
+        style={{ borderColor: "var(--border)", background: "var(--muted)" }}
+      >
+        <div>
+          <p className="font-display text-sm font-semibold leading-none">
+            {title}
+          </p>
+          <p className="mt-1 text-[11px] text-muted-foreground">{subtitle}</p>
+        </div>
+        <span
+          className="rounded-md border px-2 py-0.5 text-[11px] font-mono-ent"
+          style={{ background: "var(--background)", borderColor: "var(--border)" }}
+        >
+          {count}
+        </span>
+      </div>
+      <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
+        {features.map((f) => (
+          <li
+            key={f.name}
+            className="grid grid-cols-1 gap-x-3 gap-y-0.5 px-4 py-2 md:grid-cols-[14rem_1fr_14rem] md:items-baseline"
+          >
+            <code className="font-mono-ent text-[12.5px]">{f.name}</code>
+            <span className="text-sm">{f.meaning}</span>
+            <span className="text-[11px] text-muted-foreground md:text-right">
+              {f.source}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
+  );
+}
+
+// ---------- Alignment note ----------------------------------------------------
+
+function AlignmentNote() {
+  return (
+    <section
+      className="rounded-md border px-4 py-3 text-[12.5px] leading-relaxed"
+      style={{
+        borderColor: "rgba(7, 44, 44, 0.22)",
+        background: "rgba(7, 44, 44, 0.04)",
+      }}
+      role="note"
+      aria-label="Training and runtime alignment note"
+    >
+      <p className="font-semibold">Training / runtime alignment.</p>
+      <p className="mt-1 text-muted-foreground">
+        Both the training CSV and the runtime feature builder use{" "}
+        <strong>daily aggregate</strong> weather inputs (max
+        temperature, min RH, max wind, precipitation sum, mean cloud
+        cover, solar radiation sum, ET0, soil-moisture mean). The three
+        scheduled checks at 09:00 / 11:00 / 15:00 refresh the same daily
+        decision; they do <strong>not</strong> produce separate hourly
+        FWI values.
+      </p>
+    </section>
   );
 }
