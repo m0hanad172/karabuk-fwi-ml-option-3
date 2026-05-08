@@ -8,8 +8,9 @@ FireWatch uses SQLite for runtime persistence during the prototype/demo stage.
 backend/outputs/karabuk_fwi.db
 ```
 
-This is the active real database for the current project state. It is used for
-final documentation and report evidence.
+This is the active local runtime database for the current project state. It is
+used for local demo evidence, but it is not a repository artifact and should
+not be committed.
 
 Current table counts from the active database:
 
@@ -25,22 +26,31 @@ Current table counts from the active database:
 soft-deleted alerts, manual risk checks, scheduled risk checks, and dashboard
 history can change while the system is used.
 
+Do not commit `backend/outputs/karabuk_fwi.db`. It changes during normal use
+whenever the system creates a run, stores a detection alert, marks an alert as
+read, or soft-deletes an alert.
+
 Do not run `git restore -- backend/outputs/karabuk_fwi.db` unless you
-intentionally want to reset the local demo database back to the committed
-baseline. Before any reset, keep a local backup:
+intentionally want to reset the local demo database. Before any pull, reset, or
+experiment that might overwrite runtime data, keep a local backup:
 
 ```powershell
 Copy-Item backend\outputs\karabuk_fwi.db backend\outputs\karabuk_fwi.local.backup.db
 ```
 
-On a personal demo machine, it is reasonable to mark the runtime database as a
-local-only working copy:
+For shared demo data, do not share the live runtime DB through Git. Use a demo
+seed script or a clearly named demo snapshot instead.
+
+On a personal demo machine, if the DB is still tracked in an older checkout, it
+is reasonable to mark the runtime database as a local-only working copy until
+the cleanup commit is pulled:
 
 ```powershell
 git update-index --skip-worktree backend/outputs/karabuk_fwi.db
 ```
 
-Use this only for local demo data. To make Git track the file normally again:
+Use this only for local demo data. To make Git track the file normally again in
+older branches:
 
 ```powershell
 git update-index --no-skip-worktree backend/outputs/karabuk_fwi.db

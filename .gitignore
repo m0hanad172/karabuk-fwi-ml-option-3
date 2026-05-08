@@ -66,9 +66,17 @@ backend/data/notifications/*.jpg
 backend/data/notifications/*.jpeg
 backend/data/notifications/*.png
 
-# Runtime SQLite files. Keep probe/test databases and SQLite sidecars out
-# of Git, but do not hide the active final-demo DB.
-backend/outputs/*
+# Runtime SQLite files. Keep runtime/demo databases and SQLite sidecars out
+# of Git. The active demo DB is local runtime state, not a repository artifact.
+backend/outputs/*.db
+backend/outputs/*.sqlite
+backend/outputs/*.sqlite3
+backend/outputs/*.db-journal
+backend/outputs/*.db-wal
+backend/outputs/*.db-shm
+backend/outputs/*.bak
+backend/outputs/*.bak-wal
+backend/outputs/*.bak-shm
 outputs/
 *.sqlite
 *.sqlite3
@@ -76,8 +84,10 @@ outputs/
 *.db-journal
 *.db-wal
 *.db-shm
+*.local.backup.db
+*.before-pull.db
 !backend/outputs/
-!backend/outputs/karabuk_fwi.db
+!backend/outputs/.gitkeep
 test_probe.db
 probe.db
 karabuk_fwi_test.db
