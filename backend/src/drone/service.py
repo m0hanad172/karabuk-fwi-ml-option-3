@@ -231,7 +231,17 @@ class DroneService:
             for det in self._detections:
                 try:
                     x1, y1, x2, y2 = [int(v) for v in det["bbox"]]
+                    conf = det.get("confidence", 0.0)
                     cv2.rectangle(draw, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                    cv2.putText(
+                        draw, 
+                        f"FIRE {conf:.2f}", 
+                        (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 
+                        0.6, 
+                        (0, 0, 255), 
+                        2
+                    )
                 except Exception:  # noqa: BLE001
                     continue
 

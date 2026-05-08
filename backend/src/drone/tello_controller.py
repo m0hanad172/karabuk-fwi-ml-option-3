@@ -68,6 +68,10 @@ class TelloDroneController:
             self.connect()
         if not self.connected or self._tello is None:
             return self.get_status()
+        
+        if self.stream_active:
+            return self.get_status()
+
         try:
             self._tello.streamon()
             time.sleep(1)
@@ -76,6 +80,7 @@ class TelloDroneController:
             self.last_error = None
         except Exception as e:  # noqa: BLE001
             self.stream_active = False
+            
             self.last_error = f"Tello stream failed: {e}"
             logger.warning(self.last_error)
         return self.get_status()
