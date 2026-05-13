@@ -102,6 +102,7 @@ export function DetectionAlerts() {
   const refetchAll = useCallback(() => {
     summary.refetch();
     alerts.refetch();
+    window.dispatchEvent(new Event("alerts-read-changed"));
     // deps intentionally omitted — refetch is stable
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

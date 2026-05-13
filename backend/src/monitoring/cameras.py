@@ -321,10 +321,11 @@ def _inference_loop(cam_id: str) -> None:
                     annotated = frame.copy()
                     for det in detections:
                         x1, y1, x2, y2 = [int(v) for v in det["bbox"]]
+                        label_str = det.get("label", "fire").capitalize()
                         cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 2)
                         cv2.putText(
                             annotated,
-                            f"Fire {det['confidence']:.2f}",
+                            f"{label_str} {det['confidence']:.2f}",
                             (x1, max(0, y1 - 10)),
                             cv2.FONT_HERSHEY_SIMPLEX,
                             0.7,
@@ -696,10 +697,11 @@ def mjpeg_generator(cam_id: str) -> Generator[bytes, None, None]:
             try:
                 x1, y1, x2, y2 = [int(v) for v in det["bbox"]]
                 conf = det.get("confidence", 0.0)
+                label_str = det.get("label", "fire").capitalize()
                 cv2.rectangle(draw, (x1, y1), (x2, y2), (0, 0, 255), 2)
                 cv2.putText(
                     draw, 
-                    f"FIRE {conf:.2f}", 
+                    f"{label_str} {conf:.2f}", 
                     (x1, max(0, y1 - 10)),
                     cv2.FONT_HERSHEY_SIMPLEX, 
                     0.6, 

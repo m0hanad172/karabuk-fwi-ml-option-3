@@ -1,8 +1,11 @@
 "use client";
 
+import { useEffect } from "react";
 import { Flame } from "lucide-react";
 
 import { useT } from "@/lib/i18n-context";
+import { useApi } from "@/hooks/use-api";
+import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import {
@@ -28,6 +31,16 @@ interface SidebarNavProps {
  */
 export function SidebarNav({ activeId, onSelect, onNavigate }: SidebarNavProps) {
   const t = useT();
+  const alertSummary = useApi(() => api.getDetectionAlertsSummary(), [], 30_000);
+
+  useEffect(() => {
+    const handleAlertsChanged = () => alertSummary.refetch();
+    window.addEventListener("alerts-read-changed", handleAlertsChanged);
+    return () => window.removeEventListener("alerts-read-changed", handleAlertsChanged);
+  }, [alertSummary]);
+
+  const unreadCount = alertSummary.data?.unread_count || 0;
+
   const itemsByGroup = NAV_GROUPS.map((group) => ({
     group,
     items: NAV_ITEMS.filter((i) => i.group === group),
@@ -70,6 +83,7 @@ export function SidebarNav({ activeId, onSelect, onNavigate }: SidebarNavProps) 
             group={group}
             items={items}
             activeId={activeId}
+            unreadCount={unreadCount}
             onSelect={(id) => {
               onSelect(id);
               onNavigate?.();
@@ -94,11 +108,13 @@ function NavGroupBlock({
   group,
   items,
   activeId,
+  unreadCount,
   onSelect,
 }: {
   group: NavGroup;
   items: typeof NAV_ITEMS;
   activeId: SectionId;
+  unreadCount: number;
   onSelect: (id: SectionId) => void;
 }) {
   const t = useT();
@@ -145,6 +161,11 @@ function NavGroupBlock({
                   )}
                 />
                 <span className="truncate">{label}</span>
+                {item.id === "alerts" && unreadCount > 0 && (
+                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-[#FF5F03] px-1.5 text-[10px] font-bold text-white">
+                    {unreadCount}
+                  </span>
+                )}
               </button>
             </li>
           );

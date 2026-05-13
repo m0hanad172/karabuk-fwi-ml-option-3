@@ -1,7 +1,7 @@
 """Shared YOLO fire detector — lazy, thread-safe singleton.
 
 Used by both camera and drone loops. Loaded from
-``models/fire_detection/best3.pt`` (migrated from the legacy detection
+``models/fire_detection/best4.pt`` (migrated from the legacy detection
 reference). This module never reads anything from the Option 3 prediction
 pipeline — it is a detection-only asset.
 """
@@ -91,7 +91,7 @@ def get_detector() -> Any | None:
 def run_detection(frame) -> list[dict]:
     """Run YOLO on a single frame and return a list of detection dicts.
 
-    Each detection is ``{"label": "fire", "confidence": float, "bbox": [x1,y1,x2,y2]}``.
+    Each detection is ``{"label": str, "confidence": float, "bbox": [x1,y1,x2,y2]}``.
     Returns ``[]`` if detection is unavailable or the model found nothing.
     """
     model = get_detector()
@@ -115,7 +115,9 @@ def run_detection(frame) -> list[dict]:
             try:
                 conf = float(box.conf[0])
                 bbox = [float(x) for x in box.xyxy[0].tolist()]
+                cls_id = int(box.cls[0])
+                label = r.names[cls_id]
             except Exception:  # noqa: BLE001
                 continue
-            detections.append({"label": "fire", "confidence": conf, "bbox": bbox})
+            detections.append({"label": label, "confidence": conf, "bbox": bbox})
     return detections
