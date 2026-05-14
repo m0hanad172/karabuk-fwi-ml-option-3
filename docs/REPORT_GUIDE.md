@@ -40,6 +40,13 @@ Explain:
 - Fire/smoke detection pipeline.
 - SQLite persistence and API/dashboard integration.
 
+Required detection wording:
+
+> The visual detection module uses best4.pt as the active YOLO fire/smoke
+> detector. The detector supports two classes, fire and smoke, and the runtime
+> pipeline preserves the detected label in the live overlay, alert storage, and
+> Detection Alerts interface.
+
 ### 5. System Design
 
 Use the diagrams in `docs/diagrams/`:

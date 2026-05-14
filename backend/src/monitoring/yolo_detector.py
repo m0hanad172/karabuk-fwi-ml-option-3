@@ -41,6 +41,21 @@ def _env_float(name: str, default: float) -> float:
 YOLO_IMG_SIZE = _env_int("MONITORING_YOLO_IMGSZ", 640)
 YOLO_CONF = _env_float("MONITORING_YOLO_CONF", 0.4)
 
+_LABEL_ALIASES = {
+    "fire": "fire",
+    "flame": "fire",
+    "flames": "fire",
+    "smoke": "smoke",
+}
+
+
+def normalize_detection_label(label: Any) -> str:
+    """Return the canonical label stored by overlays and alerts."""
+    clean = str(label or "unknown").strip().lower()
+    if not clean:
+        return "unknown"
+    return _LABEL_ALIASES.get(clean, clean)
+
 
 def get_detector() -> Any | None:
     """Return the loaded YOLO model or None if unavailable.
@@ -116,7 +131,7 @@ def run_detection(frame) -> list[dict]:
                 conf = float(box.conf[0])
                 bbox = [float(x) for x in box.xyxy[0].tolist()]
                 cls_id = int(box.cls[0])
-                label = r.names[cls_id]
+                label = normalize_detection_label(r.names.get(cls_id, "unknown"))
             except Exception:  # noqa: BLE001
                 continue
             detections.append({"label": label, "confidence": conf, "bbox": bbox})

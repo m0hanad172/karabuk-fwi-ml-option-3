@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from src.api.main import app
 from src.monitoring import cameras as cams
 from src.monitoring import notifications as notif
+from src.monitoring.yolo_detector import normalize_detection_label
 
 
 @pytest.fixture
@@ -137,6 +138,20 @@ class TestNotifications:
         notif.add_notification("drone", [{"confidence": 0.5, "bbox": [0, 0, 1, 1]}])
         # Immediately after, the throttle must block.
         assert notif.should_notify("drone") is False
+
+
+class TestYoloLabels:
+    def test_fire_smoke_label_normalization(self):
+        assert normalize_detection_label("Fire") == "fire"
+        assert normalize_detection_label("fire") == "fire"
+        assert normalize_detection_label("flame") == "fire"
+        assert normalize_detection_label("Smoke") == "smoke"
+        assert normalize_detection_label("smoke") == "smoke"
+
+    def test_unknown_label_is_safe(self):
+        assert normalize_detection_label("") == "unknown"
+        assert normalize_detection_label(None) == "unknown"
+        assert normalize_detection_label("other") == "other"
 
 
 class TestDetectionAlerts:
