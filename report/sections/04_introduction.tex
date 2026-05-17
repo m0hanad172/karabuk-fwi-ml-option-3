@@ -1,0 +1,182 @@
+\chapter{Introduction}
+
+\section{Background}
+
+Forest fires are one of the most serious natural hazards affecting Türkiye.
+Every year, thousands of hectares of forest are damaged, threatening human
+lives, wildlife, critical infrastructure, and the national economy~\cite{colak2020}.
+The combination of hotter summers, prolonged drought periods, and human
+activities has increased both the frequency and severity of wildfires~\cite{goltas2024,ekberzade2025}.
+
+Traditional wildfire monitoring in Türkiye still relies heavily on fixed
+lookout towers, ground patrols, and reports from local communities. Although
+these methods are useful, they suffer from several limitations: they are
+labor-intensive, dependent on human vigilance, and often detect fires only
+after they have grown to a dangerous size~\cite{bugaric2025}. At the same
+time, recent advances in unmanned aerial vehicles (UAVs), low-cost sensors,
+and artificial intelligence (AI) provide a new opportunity to move from
+reactive firefighting to proactive, risk-driven monitoring~\cite{mohapatra2022}.
+
+This project focuses on FireWatch: A Drone-Ready Wildfire Risk Prediction and
+Fire/Smoke Detection System for the Karabük region. The final system combines
+daily wildfire risk prediction from 2012--2025 seasonal Karabük records, live
+fire/smoke detection using a custom YOLOv8 detector, persistent alert storage,
+and dashboard-based monitoring. The system also includes a drone-ready layer
+for mock, Tello, and demo support, but it does not claim to be a fully
+autonomous production drone deployment.
+
+\section{Problem Statement}
+
+Despite the increasing impact of wildfires in Türkiye, current monitoring and
+early-warning practices still show important gaps:
+
+\begin{itemize}
+  \item Fire risk is not always quantified in a continuous and operational form
+  that can support daily monitoring decisions for the target region~\cite{colak2020}.
+  \item Drone and camera systems, when used, are usually operated manually
+  rather than being prioritized or recommended based on risk levels~\cite{rjoub2023}.
+  \item Many existing camera systems only provide live video without
+  intelligent fire/smoke detection, which means they still depend on human
+  operators~\cite{mohapatra2022}.
+  \item Historical data on risk, detections, and responses are not fully
+  integrated into a single platform that can support post-event analysis and
+  future planning.
+\end{itemize}
+
+As a result, fires may be detected late, high-risk periods may not receive
+enough attention, and decision-makers may lack an integrated view of risk,
+detection, and response. In the final FireWatch system, this gap is addressed
+by combining risk prediction, live fire/smoke detection, persistent alerts, and
+a dashboard view.
+
+Prediction alone cannot confirm whether fire or smoke is already present, while
+visual detection alone does not provide the daily risk context needed for
+preparedness and prioritization. Operators therefore need an integrated system
+that connects risk estimates, visual evidence, alert history, and system status
+in one workflow.
+
+\section{Importance of the Study}
+
+Developing an intelligent wildfire monitoring system has clear real-world
+value. Earlier and more reliable detection of fires can reduce burned area,
+economic losses, and ecological damage~\cite{mohapatra2022}. A risk-driven
+monitoring approach can help forestry authorities and operators focus limited
+resources on the most vulnerable periods and locations instead of monitoring
+large areas uniformly.
+
+For computer engineering, the project is also important as a practical case
+study that integrates several disciplines: machine learning for wildfire risk
+prediction, computer vision for fire/smoke detection, backend service
+development, database persistence, and dashboard design for decision support.
+The final FireWatch prototype combines a two-stage machine learning prediction
+workflow, a custom YOLOv8 fire/smoke detector, a FastAPI backend, a
+React/TypeScript dashboard, and SQLite persistence.
+
+The drone-ready layer adds another engineering dimension by preparing the
+system for future patrol support. In the current implementation, this layer is
+limited to mock, Tello, and demo support and should be understood as a
+prototype direction rather than a field-tested autonomous drone deployment.
+
+\section{Research Question}
+
+The main research question of this thesis is:
+
+\begin{quote}
+How can a drone-ready wildfire monitoring system combine daily wildfire risk
+prediction, live fire/smoke detection, persistent alert management, and
+dashboard-based decision support for the Karabük region?
+\end{quote}
+
+\section{Aim and Objectives}
+
+The aim of this project is to design and implement FireWatch as a drone-ready
+wildfire risk prediction and fire/smoke detection prototype for the Karabük
+region.
+
+To achieve this aim, the project sets the following specific objectives:
+
+\begin{enumerate}
+  \item Build a wildfire risk prediction workflow using 2012--2025 seasonal
+  Karabük records.
+  \item Develop a 34-feature engineering pipeline for regional daily risk
+  estimation.
+  \item Implement a two-stage machine learning model using a
+  HistGradientBoostingRegressor as the Stage 1 regression model and a
+  RandomForestClassifier as the Stage 2 safety classifier.
+  \item Detect fire and smoke using a custom YOLOv8 detector with
+  \texttt{best4.pt} as the active detection model.
+  \item Build a FastAPI backend and a React/TypeScript dashboard to integrate
+  prediction outputs, live monitoring views, alerts, and system status.
+  \item Store prediction history and detection alerts using SQLite, including
+  persistent alert review states.
+  \item Validate the prototype through backend tests, frontend build checks,
+  scheduler verification, persistence checks, and detection testing.
+  \item Provide drone-ready monitoring support without claiming full
+  autonomous production deployment.
+\end{enumerate}
+
+Each objective directly addresses limitations identified in the problem
+statement and can be evaluated using measurable indicators such as prediction
+performance, detection performance, response time, persistence behavior,
+testing results, and dashboard usability.
+
+\section{Scope of the Project}
+
+This project is scoped as a pilot implementation for \textbf{Karabük Province}
+(Türkiye) and its surrounding forested areas. Karabük is located in the Western
+Black Sea region and is characterized by extensive forest coverage and mixed
+terrain, where seasonal heat, dry winds, and human activity near roads and
+settlements can elevate wildfire risk.
+
+Within this scope, FireWatch focuses on daily wildfire risk prediction using
+2012--2025 seasonal Karabük records, live webcam/PC/drone-ready fire/smoke
+detection, SQLite persistence for prediction runs and detection alerts, and a
+dashboard that includes operational views such as Risk Decision, Detection
+Alerts, System and Model, System Flow, and a Risk Map. The project is intended
+as an academic prototype and regional pilot, not as a replacement for official
+emergency response systems.
+
+Full autonomous drone operations, long-term province-wide sensor deployment,
+regulatory flight approval, mission planning, waypoint navigation, and
+production safety certification are outside the current scope. These items are
+treated as future work.
+
+\section{Main Contributions}
+
+The main contributions of this thesis are summarized as follows:
+
+\begin{itemize}
+  \item An end-to-end FireWatch prototype that combines wildfire risk
+  prediction, fire/smoke detection, alert storage, and dashboard monitoring.
+  \item A 34-feature prediction pipeline for regional daily wildfire risk
+  estimation.
+  \item A two-stage prediction model using a Stage 1
+  HistGradientBoostingRegressor and a Stage 2 RandomForestClassifier safety
+  classifier.
+  \item A high-risk target based on \(\mathrm{FWI} \geq 35\).
+  \item A custom YOLOv8 fire/smoke detector using \texttt{best4.pt} as the
+  active detection model.
+  \item A FastAPI backend and React/TypeScript dashboard that integrate
+  prediction outputs, live monitoring views, alert review, and system status.
+  \item SQLite-based persistence for prediction history, detection alerts,
+  snapshots, read/unread state, and soft deletion.
+  \item Scheduled operational risk checks at 09:00, 11:00, and 15:00 Istanbul
+  time.
+  \item A dashboard that includes Live Monitoring, Risk Decision, Risk Map,
+  Detection Alerts, System and Model, and System Flow views.
+\end{itemize}
+
+\section{Thesis Organization}
+
+Chapter 2 reviews related studies on wildfire prediction and fire/smoke
+detection, including the limitations of reviewed studies and a comparative
+summary. Chapter 3 explains the methodology, including data preparation,
+feature engineering, prediction modeling, and visual detection methodology.
+Chapter 4 presents the system design and architecture, including the backend,
+frontend, database, scheduler, and drone-ready layer.
+
+Chapter 5 describes the implementation of the FireWatch prototype. Chapter 6
+explains testing and validation, including backend tests, frontend build
+verification, database persistence, detection validation, and alert behavior.
+Chapter 7 presents the results and discussion. Chapter 8 concludes the thesis
+and describes future work.

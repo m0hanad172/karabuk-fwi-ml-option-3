@@ -1,0 +1,85 @@
+\chapter{Conclusion and Future Work}
+
+\section{Conclusion}
+
+This thesis presented FireWatch: A Drone-Ready Wildfire Risk Prediction and
+Fire/Smoke Detection System. The project was developed as a regional
+decision-support prototype for Karabük, Türkiye. Its purpose was to show how
+weather-based wildfire risk prediction, visual fire/smoke detection,
+persistent alert management, dashboard monitoring, scheduler support, and a
+drone-ready layer can be combined into one coherent software system.
+
+The prediction methodology used May--October seasonal Karabük records from
+2012 to 2025. Open-Meteo daily weather aggregates were used as accessible
+model inputs, while the processed dataset included a processed FWI target
+associated with official fire-danger data and used for supervised learning.
+The final prediction workflow used a two-stage structure:
+Stage 1 applied a \texttt{HistGradientBoostingRegressor} to estimate
+continuous FWI, and Stage 2 applied a \texttt{RandomForestClassifier} as a
+safety-oriented classifier for days where \( \mathrm{FWI} \geq 35 \).
+
+The visual monitoring part of the project used a custom YOLOv8 detector, with
+\texttt{best4.pt} as the active fire/smoke detection model. This detector was
+kept separate from the weather-based prediction model. Its role was to provide
+visual evidence from camera or drone-ready monitoring sources, while the
+prediction model provided daily fire-weather risk awareness.
+
+The system implementation connected these models through a FastAPI backend,
+SQLite persistence, a scheduler, and a React/TypeScript dashboard. SQLite made
+it possible to preserve prediction history and detection alerts, including
+review states such as read/unread and soft deletion. The dashboard provided an
+operator-facing interface where risk decisions, monitoring feeds, detection
+alerts, system/model information, workflow explanation, and map context could
+be reviewed together.
+
+The final system answers the research question by demonstrating that daily
+risk prediction, live fire/smoke detection, persistent alert management, and
+dashboard-based decision support can be integrated into one regional wildfire
+monitoring prototype. At the same time, the project remains realistic about
+its scope. FireWatch is a B.Sc. engineering prototype and regional pilot; it
+is not an official emergency response system and does not claim full
+autonomous production drone deployment.
+
+\section{Future Work}
+
+Future work should first improve the robustness of the visual detection
+module. The current prototype uses frame-based YOLOv8 detection, but practical
+outdoor use would benefit from multi-frame confirmation, glare and reflection
+filtering, bounding-box area filtering, and testing on a larger labelled
+fire/smoke validation set. A formal benchmark should also be prepared so that
+detection metrics such as mAP, precision, and recall can be reported reliably.
+
+The prediction workflow can also be extended. Future versions could include
+additional years, neighbouring regions, fuel-related variables, topography,
+land-cover information, and human-activity indicators if reliable data are
+available. The high-risk threshold and classifier probability threshold could
+also be calibrated using operational feedback. Uncertainty estimation would
+make the prediction output more useful by showing not only the predicted risk
+value, but also the confidence or uncertainty around that decision.
+
+The drone-ready layer should be developed gradually and under clear safety
+constraints. Future work may include supervised waypoint patrol, geofencing,
+return-to-home behaviour, battery-aware mission planning, and safer mission
+state management. These improvements would also require regulatory
+compliance, operator procedures, hardware validation, and production-level
+safety testing before any real autonomous patrol could be considered.
+
+A production deployment would require stronger infrastructure than the current
+local prototype. SQLite is suitable for demonstration and single-operator use,
+but a deployed multi-user system should use a server-based database such as
+PostgreSQL. Authentication, user roles, backups, monitoring, logging, and
+cloud or on-premise deployment procedures would also be required before the
+system could be used in an operational environment.
+
+Data pipeline traceability is another important area for improvement. Future
+work should formalize the raw Open-Meteo and CEMS/Copernicus download scripts,
+store reproducible data-preparation records, and document dataset versions.
+This would make it easier to rebuild the processed dataset, audit modelling
+decisions, and compare future model versions fairly.
+
+Finally, field validation is necessary before FireWatch can be considered for
+real operational use. The system should be tested with outdoor camera scenes,
+different lighting conditions, different weather conditions, and real operator
+feedback. Such validation would help measure alert usefulness, identify false
+positive causes, and determine how the dashboard supports decision-making in
+real monitoring situations.

@@ -1,0 +1,290 @@
+\chapter{System Design and Implementation}
+
+\section{System Architecture Overview}
+
+FireWatch is designed as an integrated decision-support prototype for wildfire
+monitoring in the Karabük regional context. The system combines weather-based
+risk prediction, visual fire/smoke detection, persistent alert storage, and a
+dashboard interface into one workflow. Its purpose is not to replace official
+emergency systems, but to demonstrate how software, machine learning,
+computer vision, and operator-facing tools can support earlier awareness and
+more structured monitoring decisions.
+
+The architecture is organised into several cooperating layers. The data and
+model-input layer prepares daily weather inputs and engineered features. The
+prediction layer applies the two-stage wildfire risk model, consisting of a
+Stage 1 \texttt{HistGradientBoostingRegressor} and a Stage 2
+\texttt{RandomForestClassifier}. The visual detection layer uses the active
+YOLOv8 \texttt{best4.pt} detector to identify fire and smoke evidence from
+camera sources. These layers are coordinated through a FastAPI backend, stored
+through SQLite persistence, and presented through a React/TypeScript
+dashboard. A drone-ready support layer provides mock, Tello-oriented, and demo
+workflows for supervised prototype operation.
+
+Prediction and detection are separated by design. The prediction module
+estimates daily fire-weather risk from weather-derived inputs and produces
+decision-support values such as predicted FWI and high-risk probability. The
+detection module does not estimate FWI; instead, it examines camera frames and
+confirms visible fire or smoke evidence. This separation keeps the numerical
+risk model and the visual evidence pipeline understandable, testable, and
+auditable.
+
+The backend coordinates the system workflow and exposes the outputs needed by
+the dashboard. Prediction runs, system state, and detection alerts are stored
+so that operational information is not lost after a browser refresh or backend
+restart. SQLite provides this persistence layer during the prototype stage by
+preserving prediction history, the latest system state, and durable detection
+alerts.
+
+The dashboard acts as the operator-facing layer. It brings together risk
+status, live monitoring views, detection alerts, model/system information, and
+map context in a single interface. The drone-ready layer is included to show
+how future camera streams and supervised patrol demos can connect to the same
+monitoring workflow, but the current system does not claim full autonomous
+production drone deployment.
+
+\section{Backend and API Design}
+
+The backend is implemented with FastAPI and functions as the coordination
+layer for the FireWatch prototype. It connects the prediction pipeline,
+monitoring services, detection alerting, scheduler status, drone-ready
+support, and dashboard data responses. This design keeps the browser client
+focused on presentation while the backend owns inference, persistence,
+monitoring state, and API contracts.
+
+The API is organised into high-level route groups. Risk and prediction
+endpoints support manual risk checks and retrieval of the latest operational
+prediction. Weather endpoints provide display-oriented weather information.
+History endpoints expose stored prediction runs for audit and review. System
+endpoints provide model metadata, health information, runtime configuration,
+and scheduler status. Monitoring endpoints manage camera feeds, detection
+notifications, and durable detection alerts. Drone endpoints expose
+operator-controlled drone-ready status, stream, demo patrol, manual command,
+and emergency-stop behaviours.
+
+Manual and scheduled prediction requests use the same risk decision workflow
+where possible. A risk check obtains model inputs, builds the required
+features, runs the Stage 1 and Stage 2 models, applies the decision logic, and
+persists the result. Scheduled runs are triggered by the backend scheduler,
+while manual runs are initiated by an operator. Both run types are treated as
+operational prediction events and can be reviewed later through the stored
+history.
+
+Camera streams and detection outputs are handled through the monitoring
+services rather than through the prediction route group. Local cameras,
+webcam/PC-camera feeds, and drone-ready video streams use the same general
+fire/smoke detection path. When the detector raises an event, the alerting
+service stores the label, confidence, source, timestamp, and optional snapshot
+evidence for dashboard review.
+
+The backend structure separates major responsibilities so that model
+inference, camera monitoring, alert persistence, scheduler operation,
+drone-ready controls, and response formatting remain manageable. This separation is
+important for a prototype that combines several engineering areas, because it
+reduces coupling between the risk model and the visual monitoring layer. The
+design is local and prototype-oriented; it does not claim cloud deployment,
+production-grade security, or integration with official emergency-response
+infrastructure.
+
+\section{Database and Persistence Design}
+
+FireWatch uses SQLite as a lightweight persistence layer for the local
+prototype. SQLite is suitable for this stage because it is serverless, easy to
+inspect, and sufficient for a single-machine academic demonstration. The
+active runtime database is stored at
+\texttt{backend/outputs/karabuk\_fwi.db}.
+
+The database preserves three main categories of information. The
+\texttt{run\_history} table stores prediction runs, including run type,
+timestamp, target date, predicted FWI, high-risk probability, final decision,
+decision reason, thresholds, raw inputs, engineered features, run metadata,
+and diagnostic details. The \texttt{system\_state} table stores small persistent state values,
+such as the latest drone-ready policy state. The
+\texttt{detection\_alerts} table stores durable fire/smoke alerts from the
+monitoring layer.
+
+Persistent storage is important because FireWatch is intended to support
+operator review, not only live display. Prediction results should remain
+available after refresh or restart so operators can inspect previous runs.
+Detection alerts also need review status because an alert may be unread,
+opened, marked as read, returned to unread, or hidden from normal dashboard
+views. This makes persistence part of the decision-support design rather than
+only a technical storage detail.
+
+Detection alerts preserve the visual evidence metadata needed by the
+dashboard. Stored fields include the fire/smoke label, confidence value,
+source camera or device, timestamp, severity/message, detection count, detailed
+detection payload, optional snapshot path, read/unread state, read timestamp,
+soft-delete state, and deletion timestamp. Snapshot images are stored as files
+and referenced from SQLite, while the database row keeps the operational
+record available for the Detection Alerts interface.
+
+The runtime database policy treats \texttt{backend/outputs/karabuk\_fwi.db}
+as local runtime/demo data. It is ignored by Git and should not be committed,
+because prediction runs, alert review state, soft-deleted alerts, and demo
+activity change during normal use. Shared demonstration data should therefore
+be prepared through seed scripts or clearly named snapshots rather than by
+committing the active live database.
+
+SQLite is an appropriate choice for a B.Sc. prototype and regional pilot, but
+it is not presented as the final production database architecture. A
+multi-user or deployed monitoring system would likely require a server-based
+database such as PostgreSQL, stronger access control, backup policies, and
+operational monitoring.
+
+\section{Prediction and Detection Integration}
+
+FireWatch integrates prediction and detection as two coordinated but logically
+separate workflows. The prediction workflow estimates daily wildfire risk from
+weather-derived features using the Stage 1 and Stage 2 models. The visual
+detection workflow examines live camera frames using the YOLOv8
+\texttt{best4.pt} detector and records visible fire or smoke evidence. Keeping
+these workflows separate avoids mixing modelled risk with observed visual
+evidence.
+
+The Stage 1 prediction model produces a continuous predicted FWI value, while
+the Stage 2 classifier supports the final high-risk decision near operationally
+important thresholds. This output gives the operator a risk estimate for the
+target date. The detection layer has a different role: it does not calculate
+FWI or alter the prediction result, but checks whether camera sources contain
+visible fire or smoke.
+
+Both workflows meet in the backend and dashboard. Risk outputs are shown as
+decision-support information, while detection alerts are shown as operational
+evidence. This allows the operator to distinguish between a high-risk weather
+situation and confirmed visual signs of fire or smoke. The design therefore
+answers two different questions: whether conditions are dangerous, and whether
+there is visible evidence that requires review.
+
+When the prediction pipeline identifies high-risk conditions, the result can
+support monitoring priority and drone-ready patrol recommendations. This does
+not mean the system autonomously launches production drone missions. Instead,
+the prediction result informs the operator and prepares the monitoring layer
+for supervised or demo operation.
+
+Detection alerts are persisted with practical review metadata, including the
+camera or device source, fire/smoke label, confidence value, timestamp, and
+snapshot or evidence reference when available. This gives the dashboard a
+durable alert history and helps operators compare risk likelihood with visual
+evidence from monitoring feeds.
+
+\section{Frontend Dashboard Design}
+
+The frontend dashboard is implemented with React and TypeScript. It is the
+operator-facing layer of FireWatch and presents backend outputs in a structured
+way. The dashboard is designed to support monitoring and review rather than to
+duplicate backend logic. Prediction, persistence, detection, and scheduler
+state remain owned by the backend.
+
+The final dashboard structure is organised around approved operational views:
+Overview / Live Monitoring, Detection Alerts, Risk Map, System and Model, and
+System Flow. These views reduce the amount of information shown at once while
+still giving the operator access to the main parts of the system.
+
+The Overview / Live Monitoring view brings key information together. It is
+intended to show current weather and risk context, the latest operational
+status, live monitoring feeds, and the most important system summary. This
+view acts as the starting point for daily use because it combines both risk
+awareness and monitoring state.
+
+The Detection Alerts view focuses on persistent fire/smoke evidence. It
+supports review of alert labels, confidence values, source information,
+timestamps, snapshots when available, read/unread state, and soft deletion.
+This design makes alerts durable and reviewable rather than temporary
+on-screen messages.
+
+The Risk Map provides spatial context for the Karabük monitoring area and
+supports planning-oriented interpretation of historical burned-area and risk
+context. It is used as an operator awareness view rather than as a direct
+replacement for the prediction model. The System and Model view summarizes
+model, feature, threshold, and health information needed to understand the
+current configuration. The System Flow view explains the end-to-end workflow
+visually, showing how weather input, prediction, detection, persistence, and
+dashboard review connect.
+
+\section{Scheduler and Operational Run Design}
+
+The scheduler supports repeated operational risk checks during the day. In the
+current FireWatch design, scheduled checks are configured for 09:00, 11:00,
+and 15:00 Istanbul time. Using the local operational timezone keeps scheduled
+decisions aligned with the daily monitoring routine for Karabük.
+
+Each scheduled run follows the same general data-to-decision path as an
+operator-triggered manual run. The system obtains daily model inputs, builds
+the required features, runs the Stage 1 and Stage 2 prediction workflow, and
+applies the decision logic. This consistency helps avoid different behaviour
+between automatic checks and manual checks.
+
+Both manual and scheduled runs are persisted in SQLite. The
+\texttt{run\_history} table stores prediction results and associated metadata,
+allowing the dashboard to show the latest operational run and retain previous
+decisions for later review. This shared persistence design also makes it
+easier to compare manual and scheduled outputs for the same operational
+period. This is important because risk decisions should be auditable rather
+than disappearing after execution.
+
+The scheduler design also prevents operational checks from being treated as a
+temporary console-only process. Scheduled checks are registered as backend
+jobs, exposed through system status, and connected to the same persistence path
+used by manual checks. This makes the behaviour visible to the dashboard and
+easier to verify during demonstrations.
+
+The scheduled run design is still part of a local prototype. It supports
+structured decision support and review, but it does not represent official
+emergency deployment or certified operational wildfire command infrastructure.
+
+\section{Drone-Ready Implementation}
+
+FireWatch includes a drone-ready layer to prepare the prototype for supervised
+aerial monitoring. This layer is designed to connect camera-based monitoring
+with future drone streams while keeping physical drone operation under
+operator control. It supports the project goal of being drone-ready without
+claiming certified autonomous deployment.
+
+The current implementation supports mock mode and Tello-oriented
+configuration. Mock mode allows the drone workflow to be tested without real
+hardware, which is useful for demonstrations, interface checks, and safe
+development. Tello mode prepares the system for a configured drone adapter,
+including connection status, video stream handling, battery/status reporting,
+emergency stop support, and controlled demo behaviour when the required safety
+flags are enabled.
+
+Drone-ready support is connected to the monitoring and dashboard workflow.
+The system can expose drone status, stream state, patrol recommendation state,
+and demo patrol results to the operator interface. The same fire/smoke
+detection path can process a drone-ready video source, so future aerial
+monitoring can reuse the alerting and persistence design already used for
+local camera feeds.
+
+Physical movement is protected by safety gates. Manual controls are blocked by
+default unless explicitly enabled. Takeoff or demo movement requires explicit
+configuration and operator confirmation, and emergency stop support is
+available through the drone-ready API layer. This design keeps the prototype
+safe for academic demonstration and prevents risk prediction from directly
+causing uncontrolled hardware movement.
+
+High-risk prediction can support patrol recommendation or monitoring priority,
+but the current project does not claim full autonomous production launch.
+Full waypoint navigation, return-to-home behaviour, battery-aware mission
+planning, regulatory compliance, and production safety validation remain
+outside the current scope.
+
+\section{Implementation Summary}
+
+This chapter described how FireWatch is implemented as a working software
+prototype. The system connects weather-based prediction, fire/smoke detection,
+SQLite persistence, dashboard presentation, scheduled risk checks, and
+drone-ready support into one decision-support workflow for the Karabük regional
+pilot.
+
+The FastAPI backend coordinates the main workflows and exposes the data needed
+by the dashboard. SQLite preserves prediction history, system state, and
+detection alerts so that operational information remains available for review.
+The React/TypeScript dashboard presents risk information, alert evidence,
+system/model status, workflow context, and spatial awareness to the operator.
+
+The implementation is modular: prediction, detection, persistence, scheduler
+operation, drone-ready support, and dashboard views are separated into clear
+responsibilities. This makes the prototype easier to test, explain, and
+extend. It also supports the methodology described in Chapter 3 and prepares
+the basis for the results and discussion presented in Chapter 5.

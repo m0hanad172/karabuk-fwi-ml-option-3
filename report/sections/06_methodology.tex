@@ -1,0 +1,292 @@
+\chapter{Methodology}
+
+\section{Methodology Overview}
+
+The methodology of FireWatch is built around two complementary forms of
+wildfire monitoring. The first is weather-based risk prediction, which
+estimates daily fire-weather danger for the Karabük region. The second is
+visual fire/smoke detection, which provides camera-based evidence when fire or
+smoke appears in a monitoring feed. These two modules are methodologically
+separate: the prediction model estimates fire-weather risk, while the detection
+model identifies visible fire or smoke evidence.
+
+The prediction workflow begins with weather variables collected for Karabük
+from Open-Meteo, while the processed dataset includes a Fire Weather Index
+(FWI) target associated with official CEMS/Copernicus fire-danger data. The
+prepared dataset stores this supervised learning target in the column
+\texttt{FWI}. The repository stores the processed FWI target used for
+modelling, while the raw external download workflow is treated as a
+data-preparation step rather than a runtime dependency. The project does not
+calculate the full Canadian FWI equation chain at runtime. Instead, the FWI
+value is used as the training target, and the deployed model learns to
+approximate it from accessible weather variables and engineered temporal
+features. This choice keeps the operational pipeline practical while anchoring
+the model to an established fire-danger indicator.
+
+The complete workflow is as follows: weather records are collected and aligned
+by date, the May--October seasonal window is selected, raw weather variables
+are transformed into a locked 34-feature schema, a Stage 1 regression model
+predicts continuous FWI, and a Stage 2 safety classifier estimates whether the
+day should be treated as high risk. The resulting decision is stored and shown
+on the dashboard. In parallel, the YOLOv8 fire/smoke detector processes camera
+or drone-ready video sources and creates persistent detection alerts when fire
+or smoke is detected.
+
+% TODO: Add Figure: system methodology workflow.
+% TODO: Add Figure: two-stage prediction pipeline.
+% TODO: Add Table: 34 feature groups.
+
+\section{Study Region and Data Sources}
+
+The study region is Karabük, Türkiye, with the system configuration using the
+coordinates \(41.2061^\circ\) latitude and \(32.6204^\circ\) longitude for
+model-input weather collection. Karabük was selected as a regional pilot
+because the project aims to support local wildfire preparedness rather than
+produce a generic non-local risk model.
+
+Weather variables are obtained from Open-Meteo. The data pipeline separates
+historical model-input preparation from operational forecast-based inference:
+historical archive data are used for past records, while forecast data can be
+used when the target date falls on or after the current Istanbul-local date.
+The weather variables used by the model are daily aggregate values rather than
+display-only live weather values. This separation is important because the
+dashboard can show current weather for operator awareness, but the prediction
+model must receive inputs that match the training dataset semantics.
+
+The supervised learning target is the FWI value stored in the dataset as
+\texttt{FWI}. The final FireWatch methodology treats this target as the daily
+fire-danger signal used during training. The Canadian FWI system is an
+established fire-danger rating framework \cite{stocks1989}; however, FireWatch
+does not reproduce the full chain of FWI sub-index equations during runtime.
+Instead, the target teaches the model how daily weather and recent drying
+patterns relate to FWI.
+
+\section{Data Collection Period and Seasonal Filtering}
+
+The processed FireWatch dataset covers seasonal records from 1 May 2012 to
+31 October 2025. The processed file contains 2,576 daily rows and
+uses the months May, June, July, August, September, and October. This confirms
+that the training and evaluation data are restricted to the warm-season period
+most relevant to wildfire risk in the project scope.
+
+Seasonal filtering is used for methodological reasons. Including winter and
+low-risk months would add many examples whose weather patterns are less
+informative for fire-season decisions. This could make the model appear more
+stable while weakening its focus on the period when wildfire preparedness is
+operationally important. Restricting the dataset to May--October keeps the
+learning problem aligned with the dashboard's purpose: supporting daily
+fire-season monitoring for Karabük.
+
+\section{Daily Weather Aggregation and Model Input Alignment}
+
+The current model-input pipeline does not use noon-only extraction. The
+Open-Meteo input pipeline requests daily aggregate variables with semantics
+that match the training CSV. These daily inputs are:
+\texttt{temperature\_2m\_max}, \texttt{relative\_humidity\_2m\_min},
+\texttt{wind\_speed\_10m\_max}, \texttt{precipitation\_sum},
+\texttt{cloud\_cover\_mean}, \texttt{shortwave\_radiation\_sum}, and
+\texttt{et0\_fao\_evapotranspiration}. These variables are mapped into the
+model schema as \texttt{temperature}, \texttt{rh}, \texttt{ws}, and
+\texttt{precip} where needed. The
+\texttt{soil\_moisture\_0\_to\_7cm\_mean} variable is added separately through
+the soil-moisture resolver.
+
+This design converts weather data into one representative daily model row. It
+does not attempt to reconstruct every hourly fire-weather observation or the
+full Canadian FWI state chain. The methodological reason is consistency:
+Stage 1 was trained on daily model-input variables, so scheduled and manual
+risk checks must use the same daily aggregate meanings. The official FWI target
+is daily and is used only as a supervised training label; it is not included as
+a runtime input feature.
+
+\section{Data Cleaning and Alignment}
+
+The prepared dataset is organised as daily records and aligned using the
+\texttt{date} column as the main temporal key. Additional date-related columns,
+such as \texttt{day}, \texttt{month}, and \texttt{year}, are retained to
+support seasonal filtering and calendar-based feature engineering. Before model
+training and inference, the records are sorted chronologically so that rolling
+and temporal-memory features are computed in the correct order.
+
+Column names are standardised to match the model feature schema. For example,
+weather variables such as temperature, relative humidity, wind speed, and
+precipitation are represented consistently as \texttt{temperature},
+\texttt{rh}, \texttt{ws}, and \texttt{precip}. This standardisation is
+important because the same feature schema must be used during both model
+training and operational inference. The high-risk classification target is
+derived from the official \texttt{FWI} value as \texttt{target\_ge\_35}, where
+a day is considered high risk when \( \mathrm{FWI} \geq 35 \).
+
+Target leakage is controlled during temporal feature construction. Rolling and
+exponentially weighted features are computed from shifted weather series so
+that they describe previous conditions rather than accidentally including the
+same day's target-related information. As a result, rolling rainfall, humidity,
+temperature, wind, EWMA, and dry-day features represent historical weather
+memory. The official \texttt{FWI} value is used for supervised training and
+evaluation, but it is not included as one of the 34 runtime input features.
+
+\section{Feature Engineering}
+
+FireWatch uses a locked schema of 34 input features for the prediction model.
+These features are designed to approximate the environmental behaviour
+represented by official FWI while relying on accessible weather variables and
+locally computed temporal features. The schema contains eight raw daily weather
+features and twenty-six engineered features.
+
+The raw daily weather inputs are:
+\texttt{temperature}, \texttt{rh}, \texttt{ws}, \texttt{precip},
+\texttt{cloud\_cover\_mean}, \texttt{shortwave\_radiation\_sum},
+\texttt{et0\_fao\_evapotranspiration}, and \\
+\texttt{soil\_moisture\_0\_to\_7cm\_mean}. These variables represent immediate
+fire-weather conditions such as heat, humidity stress, wind exposure, rainfall,
+solar energy, evaporation demand, and near-surface soil moisture.
+
+Seasonal and cyclical features are represented by \texttt{day\_sin},
+\texttt{day\_cos}, \texttt{month\_sin}, and \texttt{month\_cos}. These
+features allow the model to learn seasonal patterns without treating calendar
+day or month as a simple linear value.
+
+Derived fire-weather features include \texttt{vpd},
+\texttt{fuel\_drying\_rate}, \texttt{hdw}, \texttt{wind\_squared}, and
+\texttt{dew\_point}. These variables describe humidity stress, drying
+potential, wind-driven spread potential, and the relationship between
+temperature and atmospheric moisture. They help the model represent
+fire-relevant physical behaviour without calculating the full FWI equation
+chain during runtime.
+
+Rolling history features describe recent weather memory. They include
+\texttt{precip\_sum\_3d}, \texttt{precip\_sum\_7d},
+\texttt{precip\_sum\_30d}, \texttt{t\_mean\_3d}, \texttt{t\_mean\_7d},
+\texttt{rh\_min\_3d}, \texttt{rh\_min\_7d}, \texttt{rh\_mean\_3d},
+\texttt{rh\_mean\_7d}, \texttt{ws\_mean\_3d}, \texttt{ws\_mean\_7d},
+\texttt{ws\_max\_3d}, and \texttt{ws\_max\_7d}. These variables capture
+accumulated rainfall memory, persistent heat, low-humidity periods, and recent
+wind exposure.
+
+Exponentially weighted memory features are \texttt{ewma\_t},
+\texttt{ewma\_rh}, and \texttt{ewma\_precip}. They assign stronger weight to
+recent weather while still preserving short-term historical influence. The
+final dryness
+persistence feature is \texttt{consecutive\_dry\_days}, which measures how
+long the recent period has remained dry. Together, these feature groups allow
+the model to represent short-term conditions, accumulated drying, seasonality,
+and recovery after rainfall.
+
+\section{Stage 1: Wildfire Risk Regression Model}
+
+Stage 1 is the core numerical prediction model in the FireWatch pipeline. It
+uses a \texttt{HistGradientBoostingRegressor} to predict the continuous FWI
+target from the 34 engineered input features. The output of this model is
+\texttt{predicted\_fwi}, which represents the estimated daily fire-weather
+danger for the target date.
+
+Regression is suitable for Stage 1 because FWI is a continuous intensity index
+rather than a binary class label. Predicting a continuous value preserves
+information about the severity of fire-weather conditions and shows how close a
+day is to the high-risk boundary. This value can also be displayed on the
+dashboard as part of the risk explanation for operators.
+
+The model is implemented within a scikit-learn pipeline that handles missing
+values consistently using median imputation. During training, sample weighting
+is used so that mid-FWI and high-FWI cases receive greater attention than
+low-risk cases. This is important because high-risk conditions are
+operationally more critical, even if they occur less frequently than low-risk
+days.
+
+The stored Stage 1 metadata reports the model configuration, feature count,
+training/test split, and validation metrics. These metrics are discussed later
+in the Results and Discussion chapter, while this section focuses on the
+modelling procedure.
+
+\section{Stage 2: High-Risk Safety Classifier}
+
+Stage 2 is a safety-oriented classification layer built on top of the Stage 1
+regression output. It uses a \texttt{RandomForestClassifier} trained on Stage 1
+out-of-fold predictions together with three support features:
+\texttt{rh}, \texttt{ws}, and \texttt{fuel\_drying\_rate}. The full Stage 2
+input vector is therefore \texttt{predicted\_fwi}, \texttt{rh}, \texttt{ws},
+and \texttt{fuel\_drying\_rate}. Its target is \texttt{target\_ge\_35}, where
+a day is labelled as high risk when \( \mathrm{FWI} \geq 35 \).
+
+Stage 2 does not replace the Stage 1 regression model. Instead, it supports the
+final operational decision by focusing on high-risk cases, especially near the
+decision boundary. The regression output remains the main signal: if
+\texttt{predicted\_fwi} is at least 35, the day is classified as high risk. If
+\texttt{predicted\_fwi} falls in the grey zone from 28 to below 35, the Stage 2
+probability can promote the day to high risk when it reaches the configured
+probability threshold. The stored threshold is 0.10.
+
+This two-stage structure is used because high FWI conditions are more important
+from an operational safety perspective than average low-risk predictions. The
+regression model preserves the continuous risk intensity, while the classifier
+adds a decision-support layer focused on avoiding missed high-risk cases. The
+stored Stage 2 metadata reports the training/test split, probability threshold,
+and classification metrics. These results are discussed later in the Results
+and Discussion chapter.
+
+\section{Fire and Smoke Detection Methodology}
+
+The visual detection module is separate from the weather-based prediction
+pipeline. It does not predict FWI and does not modify the wildfire risk model.
+Its role is to inspect camera frames and identify visible fire or smoke
+evidence that can be stored and reviewed by an operator.
+
+The active detector is a custom YOLOv8 object detector loaded from
+\texttt{best4.pt} as the final fire/smoke detection model. The detector
+supports two classes: fire and smoke. Runtime labels are normalised so that
+Fire, fire, flame, and flames map to \texttt{fire}, while Smoke and smoke map
+to \texttt{smoke}. Unknown labels are handled safely rather than being forced
+into the fire class.
+
+YOLOv8 is suitable for this module because it performs object localisation,
+not only image-level classification. It can produce bounding boxes,
+confidence values, and class labels on live camera frames, which are useful
+for visual confirmation and alert review. In the current prototype, the
+default detection confidence is configured through \texttt{MONITORING\_YOLO\_CONF}
+with a default value of 0.4, and the default image size is 640.
+
+The current detection methodology remains frame-based. False positives from
+bright light, glare, reflections, or visually similar objects remain a known
+limitation. More advanced robustness methods, such as multi-frame
+confirmation, glare filtering, bounding-box area filtering, and extended field
+validation, are left for future work.
+
+\section{Operational Decision Workflow}
+
+At runtime, the operational prediction workflow starts by selecting the target
+date in the Istanbul operational calendar. The system obtains daily
+Open-Meteo model inputs, builds the 40-day history window needed for rolling
+and exponentially weighted features, generates a single 34-feature row, and
+runs the stacked prediction pipeline. The output includes
+\texttt{predicted\_fwi}, \texttt{high\_risk\_probability}, a binary high-risk
+flag, and the decision reason.
+
+Scheduled checks are configured for 09:00, 11:00, and 15:00 Istanbul time.
+Each scheduled check follows the same data-to-decision path as a manual risk
+check and stores the result for dashboard review. The system distinguishes
+scheduled and manual runs so that operators can audit when a decision was
+created and why it was created.
+
+The dashboard consumes the prediction output as a decision-support signal. It
+shows risk information, recent runs, model/system status, and map context.
+SQLite stores prediction history and detection alerts so that results do not
+disappear after a page refresh or backend restart. Detection alerts preserve
+the fire/smoke label and can be reviewed through the Detection Alerts
+interface.
+
+Drone-ready support is included as an operational layer rather than as a claim
+of full autonomous deployment. The project supports mock and Tello-oriented
+configuration, demo patrol behaviour, and camera-stream integration. Physical
+drone actions remain protected by operator-controlled safety gates, while full
+autonomous waypoint patrol, regulatory flight approval, and production safety
+certification remain future work.
+
+\section{Methodology Summary}
+
+The final FireWatch methodology uses a regional, two-stage, decision-support
+workflow for Karabük. The processed FWI target provides the supervised
+training signal, while Open-Meteo weather variables and engineered memory
+features provide practical runtime inputs. Stage 1 estimates continuous FWI,
+Stage 2 adds a safety layer for high-risk decisions, and the YOLOv8 detector
+supplies visual fire/smoke evidence through a separate monitoring path.
+

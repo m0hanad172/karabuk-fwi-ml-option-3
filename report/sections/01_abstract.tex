@@ -1,0 +1,44 @@
+\clearpage
+\thispagestyle{plain}
+\phantomsection
+\addcontentsline{toc}{chapter}{Abstract}
+
+\begin{center}
+{\bfseries\Large ABSTRACT\par}
+
+\end{center}
+
+\vspace{0.8cm}
+
+\noindent
+FireWatch is a drone-ready wildfire risk prediction and fire/smoke detection
+prototype developed for the Karabük region in Türkiye. The project addresses
+the need for an integrated monitoring workflow that combines early
+weather-based risk awareness with visual evidence from camera sources. The
+prediction methodology used May--October seasonal Karabük records from 2012
+to 2025. Open-Meteo daily weather aggregates were used as accessible model
+inputs, while the dataset included a processed Fire Weather Index
+(FWI) target associated with official fire-danger data and used for supervised
+learning.
+
+The prediction pipeline was designed as a two-stage model. Stage 1 used a
+HistGradientBoostingRegressor to estimate continuous FWI from a locked
+34-feature schema. Stage 2 used a RandomForestClassifier as a safety-oriented
+high-risk classifier for days where FWI is greater than or equal to 35. For
+visual monitoring, a custom YOLOv8 model, best4.pt, was used to detect fire
+and smoke from live camera or drone-ready sources.
+
+The system was implemented using a FastAPI backend, SQLite persistence,
+scheduled risk checks, and a React/TypeScript dashboard. The dashboard
+integrates risk decisions, live monitoring feeds, detection alerts,
+model/system information, workflow explanation, and map context. The results
+show that FireWatch can integrate prediction, detection, persistence, and
+dashboard-based decision support into one regional wildfire monitoring
+prototype. The system remains an academic prototype and does not claim
+official emergency deployment or full autonomous drone operation.
+
+\vspace{0.8cm}
+
+\noindent\textbf{Key Words:} wildfire prediction, fire detection, smoke detection, Fire Weather Index, YOLOv8, drone-ready monitoring, decision-support system
+
+\clearpage

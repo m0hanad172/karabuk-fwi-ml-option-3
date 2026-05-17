@@ -1,0 +1,68 @@
+% FireWatch report preamble.
+% Keep packages and document-wide formatting here only.
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{mathptmx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{setspace}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{ragged2e}
+\usepackage{tocloft}
+\usepackage{appendix}
+\usepackage{url}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+\usepackage{cleveref}
+
+\geometry{
+  a4paper,
+  left=3.5cm,
+  right=2.5cm,
+  top=2.5cm,
+  bottom=2.5cm
+}
+
+\onehalfspacing
+\justifying
+
+\hypersetup{
+  pdftitle={FireWatch: A Drone-Ready Wildfire Risk Prediction and Fire/Smoke Detection System},
+  pdfauthor={Mohanad Ehab Qasem Mohammed Al-Hajj, Ahmed Najib Ahmed Abdo, Abdulrahman Mohammed Ahmed Alhalqi}
+}
+
+\captionsetup{
+  font=small,
+  labelfont=bf
+}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{12pt}
+
+\renewcommand{\contentsname}{Table of Contents}
+\renewcommand{\listfigurename}{List of Figures}
+\renewcommand{\listtablename}{List of Tables}
+\renewcommand{\bibname}{References}
+
+\graphicspath{
+  {figures/workflow/}
+  {figures/architecture/}
+  {figures/database/}
+  {figures/dashboard/}
+  {figures/model/}
+  {figures/detection/}
+  {figures/maps/}
+}
