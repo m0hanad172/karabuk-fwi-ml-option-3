@@ -25,7 +25,7 @@ The prediction pipeline was designed as a two-stage model. Stage 1 used a
 HistGradientBoostingRegressor to estimate continuous FWI from a locked
 34-feature schema. Stage 2 used a RandomForestClassifier as a safety-oriented
 high-risk classifier for days where FWI is greater than or equal to 35. For
-visual monitoring, a custom YOLOv8 model, best4.pt, was used to detect fire
+visual monitoring, a custom YOLOv8 model, best.pt, was used to detect fire
 and smoke from live camera or drone-ready sources.
 
 The system was implemented using a FastAPI backend, SQLite persistence,

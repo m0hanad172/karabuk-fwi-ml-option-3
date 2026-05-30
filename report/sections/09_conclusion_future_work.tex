@@ -19,7 +19,7 @@ continuous FWI, and Stage 2 applied a \texttt{RandomForestClassifier} as a
 safety-oriented classifier for days where \( \mathrm{FWI} \geq 35 \).
 
 The visual monitoring part of the project used a custom YOLOv8 detector, with
-\texttt{best4.pt} as the active fire/smoke detection model. This detector was
+\texttt{best.pt} as the active fire/smoke detection model. This detector was
 kept separate from the weather-based prediction model. Its role was to provide
 visual evidence from camera or drone-ready monitoring sources, while the
 prediction model provided daily fire-weather risk awareness.
@@ -46,8 +46,10 @@ Future work should first improve the robustness of the visual detection
 module. The current prototype uses frame-based YOLOv8 detection, but practical
 outdoor use would benefit from multi-frame confirmation, glare and reflection
 filtering, bounding-box area filtering, and testing on a larger labelled
-fire/smoke validation set. A formal benchmark should also be prepared so that
-detection metrics such as mAP, precision, and recall can be reported reliably.
+fire/smoke validation set. The uploaded YOLOv8 evaluation output provides
+initial object-detection metrics, but a larger local benchmark and field
+validation campaign are still needed before operational reliability can be
+claimed.
 
 The prediction workflow can also be extended. Future versions could include
 additional years, neighbouring regions, fuel-related variables, topography,

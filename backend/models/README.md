@@ -19,8 +19,9 @@ models/
     stage2_metadata.json          Stage 2 metrics + probability threshold
     three_way_comparison.json     Regression-only vs old-parallel vs new-stacked
   fire_detection/
-    best4.pt                      Active YOLO fire/smoke detector
+    best.pt                       Active YOLO fire/smoke detector
     best3.pt                      Legacy detector weights
+    best4.pt                      Legacy detector weights
 ```
 
 ## How Each Artefact Is Used
@@ -32,7 +33,7 @@ models/
 | `metadata/stage2_metadata.json` | `src/inference/predict.py` | Provides the tuned `probability_threshold` used by the stacked decision rule. |
 | `metadata/stage1_metadata.json` | `/system/model` endpoint | Surfaced in the dashboard's System tab. |
 | `metadata/three_way_comparison.json` | Dashboard/model docs | Records regression-only vs old-parallel vs new-stacked comparison. |
-| `fire_detection/best4.pt` | `src/monitoring/yolo_detector.py` | Active YOLO fire/smoke detector for the camera and drone monitoring layer. Strictly separate from the prediction pipeline. |
+| `fire_detection/best.pt` | `src/monitoring/yolo_detector.py` | Active YOLO fire/smoke detector for the camera and drone monitoring layer. Strictly separate from the prediction pipeline. |
 
 ## Inference Contract
 
@@ -77,13 +78,13 @@ retraining can break `joblib.load`.
 
 ## YOLO Detector
 
-`fire_detection/best4.pt` is the official active YOLO fire/smoke
+`fire_detection/best.pt` is the official active YOLO fire/smoke
 detector. It supports two classes, `fire` and `smoke`. Runtime detection
 normalises Fire / fire / flame aliases to `fire`, normalises Smoke /
 smoke to `smoke`, and preserves the resulting label in the live overlay,
 SQLite alert storage, and Detection Alerts interface.
 
-The active fire/smoke detector is `best4.pt`. Older detector weights are
+The active fire/smoke detector is `best.pt`. Older detector weights are
 kept only as legacy references.
 
 Replacing the active checkpoint in the future requires updating

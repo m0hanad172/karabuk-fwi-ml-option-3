@@ -21,7 +21,7 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
 # Monitoring / detection (separate from the Stacked v3 prediction layer)
 FIRE_DETECTION_DIR = MODELS_DIR / "fire_detection"
-FIRE_DETECTION_MODEL_PATH = FIRE_DETECTION_DIR / "best4.pt"
+FIRE_DETECTION_MODEL_PATH = FIRE_DETECTION_DIR / "best.pt"
 NOTIFICATIONS_DIR = DATA_DIR / "notifications"
 
 # Persistent camera mapping — survives backend restarts so the operator

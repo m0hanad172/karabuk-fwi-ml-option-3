@@ -2,7 +2,6 @@
 
 import {
   AlertTriangle,
-  Camera,
   HardDrive,
   Laptop,
   MonitorOff,
@@ -715,9 +714,12 @@ function FeedCard({
   // Cache-bust the MJPEG <img> on each start so the browser re-opens the
   // stream instead of reusing a stale connection.
   const [bust, setBust] = useState(0);
-  useEffect(() => {
-    if (running) setBust(Date.now());
-  }, [running]);
+  const handleToggle = useCallback(() => {
+    if (!running) {
+      setBust((value) => value + 1);
+    }
+    onToggle();
+  }, [onToggle, running]);
 
   return (
     <div className="ent-card flex flex-col overflow-hidden">
@@ -819,7 +821,7 @@ function FeedCard({
         <Button
           size="sm"
           variant={running ? "outline" : "default"}
-          onClick={onToggle}
+          onClick={handleToggle}
           disabled={busy || disabled}
           className="w-full"
         >

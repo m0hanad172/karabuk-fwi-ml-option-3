@@ -42,7 +42,7 @@ Explain:
 
 Required detection wording:
 
-> The visual detection module uses best4.pt as the active YOLO fire/smoke
+> The visual detection module uses best.pt as the active YOLO fire/smoke
 > detector. The detector supports two classes, fire and smoke, and the runtime
 > pipeline preserves the detected label in the live overlay, alert storage, and
 > Detection Alerts interface.

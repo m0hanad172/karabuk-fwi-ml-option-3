@@ -1,0 +1,540 @@
+\documentclass[11pt,a4paper]{report}
+
+% ---------- Packages for a clean scientific look ----------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{setspace}
+\onehalfspacing
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{csquotes}
+\usepackage{cite} % for nicer numeric citations
+
+% Better paragraph spacing and readability
+\usepackage[parfill]{parskip} % adds space between paragraphs, no indent
+\setlength{\parskip}{0.7em}   % vertical space between paragraphs
+\setlength{\parindent}{0pt}   % no indent at beginning of paragraph
+
+% Avoid ugly page breaks (widows/orphans)
+\clubpenalty=10000
+\widowpenalty=10000
+\displaywidowpenalty=10000
+
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+% ---------- Title info ----------
+\title{\textbf{FireWatch: Drone-Based Fire Detection System}}
+\author{
+  MOHANAD EHAB QASEM MOHAMMED AL-HAJJ \\
+  AHMED NAJIB AHMED ABDO \\
+  ABDULRAHMAN MOHAMMED AHMED ALHALQI
+}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+{ will be filled later :) }
+\end{abstract}
+
+\tableofcontents
+\clearpage
+
+% ==========================================================
+\chapter{Introduction}
+% ==========================================================
+
+\section{Background}
+
+Forest fires are one of the most serious natural hazards affecting Türkiye. Every year, thousands of hectares of forest are damaged, threatening human lives, wildlife, critical infrastructure, and the national economy~\cite{colak2020}. The combination of hotter summers, prolonged drought periods and human activities has increased both the frequency and severity of wildfires~\cite{goltas2024,ekberzade2025}.
+
+Traditional wildfire monitoring in Türkiye still relies heavily on fixed lookout towers, ground patrols, and reports from local communities. Although these methods are useful, they suffer from several limitations: they are labor-intensive, dependent on human vigilance, and often detect fires only after they have grown to a dangerous size~\cite{bugaric2025}. At the same time, recent advances in unmanned aerial vehicles (UAVs), low-cost sensors and artificial intelligence (AI) provide a new opportunity to move from reactive firefighting to proactive, risk-driven monitoring~\cite{mohapatra2022}.
+
+This project focuses on designing an AI-based wildfire risk assessment and drone monitoring system for forest regions in Türkiye. The system combines weather-based fire risk indices with autonomous drone missions and real-time image analysis to support earlier detection, better allocation of resources, and more informed decision-making by forestry authorities.
+
+\section{Problem Statement}
+
+Despite the increasing impact of wildfires in Türkiye, current monitoring and early-warning practices still show important gaps:
+
+\begin{itemize}
+  \item Fire risk is not continuously quantified at fine spatial and temporal scales for each forest zone~\cite{colak2020}.
+  \item Drone and camera systems, when used, are usually operated manually rather than being triggered automatically based on risk levels~\cite{rjoub2023}.
+  \item Many existing camera systems only provide live video without intelligent fire/smoke detection, which means they still depend on human operators~\cite{mohapatra2022}.
+  \item Historical data on risk, detections and responses are not fully integrated into a single platform that can support post-event analysis and future planning.
+\end{itemize}
+
+As a result, fires may be detected late, high-risk areas may not receive enough attention on critical days, and decision-makers may lack an integrated view of risk, detection, and response.
+
+\section{Importance of the Study}
+
+Developing an intelligent wildfire monitoring system has clear real-world value. Earlier and more reliable detection of fires can reduce burned area, economic losses and ecological damage~\cite{mohapatra2022}. A risk-driven approach to drone deployment can help forestry authorities focus their limited resources on the most vulnerable zones instead of patrolling large areas uniformly.
+
+For computer engineering, the project is also important as a practical case study that integrates several disciplines: time-series modeling of weather and fire indices, embedded systems and drone control, computer vision for smoke and flame detection, and dashboard development for decision support. The proposed system can serve as a prototype that may later be adapted to different forest districts in Türkiye and to other countries with similar wildfire challenges.
+
+\section{Objectives}
+
+To achieve this aim, the project sets the following specific objectives:
+
+\begin{enumerate}
+  \item \textbf{Risk Assessment:} Develop a module that calculates wildfire risk for each monitored zone using weather data and standard fire danger indices (e.g.\ Fire Weather Index, FWI) on a continuous basis.
+  \item \textbf{Threshold-Based Automation:} Define and implement risk thresholds that automatically trigger drone missions when the predicted risk in a given zone exceeds predefined levels.
+  \item \textbf{Real-Time Fire and Smoke Detection:} Design and train computer-vision and AI models capable of detecting smoke and/or fire from live drone camera feeds and recorded images, with acceptable accuracy and latency for real-time use~\cite{almeida2022}.
+  \item \textbf{Operator Dashboard and Control Interface:} Build an interactive dashboard that allows operators to (i) visualize current and predicted fire risk on a map, (ii) monitor live drone video streams, (iii) receive alerts from the detection module, and (iv) review logs and basic statistics.
+  \item \textbf{Historical Analysis and Reporting:} Implement basic data-logging and reporting tools to store risk values, drone missions, detections and alerts, enabling post-event analysis and evaluation of system performance.
+\end{enumerate}
+
+Each objective directly addresses limitations identified in the problem statement and can be evaluated using measurable indicators such as prediction accuracy, detection performance, response time and system usability.
+
+\clearpage
+
+% ==========================================================
+
+\section{Scope of the Project}
+
+This project is scoped as a pilot implementation for \textbf{Karabük Province} (Türkiye) and its
+surrounding forested areas. Karabük is located in the Western Black Sea region and is characterized
+by extensive forest coverage and mixed terrain, where seasonal heat, dry winds, and human activity
+near roads and settlements can elevate wildfire risk.
+
+Within this scope, FireWatch focuses on: (i) defining representative monitoring zones around
+Karabük forests, (ii) estimating zone-level daily fire risk using weather/FWI-style indicators, and
+(iii) validating the concept via automated drone dispatch and vision-based confirmation of smoke or
+fire. Large-scale province-wide sensor deployment, long-term maintenance planning, and detailed
+regulatory flight operations are outside the scope of this thesis and are discussed as future work.
+
+\chapter{Literature Review}
+% ==========================================================
+
+This chapter reviews recent work on wildfire prediction and detection that is most relevant to the FireWatch pipeline, where weather-based risk triggers drone missions and a vision model confirms smoke or fire from aerial imagery.
+
+\section{Fire Prediction Studies}
+
+Kondylatos et al.\ design deep learning models based on LSTM and ConvLSTM networks to forecast short-term wildfire danger from spatio-temporal environmental variables, including weather and moisture-related inputs~\cite{kondylatos2022}. Their ConvLSTM configuration shows clear improvements over traditional index-based baselines, with reported AUROC values around $0.93$ and F1-scores near $0.8$. They also apply model interpretability tools to highlight influential predictors. The main limitation is that the models must be retrained and validated for each new region. For FireWatch, this kind of ConvLSTM risk model can strengthen the trigger that decides when drones should be dispatched.
+\\  \\ 
+Shmuel and Heifetz introduce a machine-learning fire weather index (MLFWI) trained on global ignition-related data using meteorological, vegetation and contextual features~\cite{shmuel2023}. The index is built with gradient-boosted trees (XGBoost) and achieves very high performance compared to traditional indices, with ROC--AUC values close to $0.99$ and accuracy near $0.96$. Its strength is the ability to capture non-linear interactions between drivers such as heat, drought and wind; its weakness is the need for large, high-quality datasets and careful regional calibration. In FireWatch, an MLFWI-style score can be converted directly into zone-level risk values that drive the risk map and drone scheduling.
+\\ \\ 
+Zaidi studies wildfire occurrence in Algerian forests with several machine learning classifiers based on weather and FWI-related inputs, using dimensionality reduction to handle correlated variables~\cite{zaidi2023}. An artificial neural network (ANN) model reports accuracy around $0.967$ and F1-score about $0.971$ on the considered dataset. This shows that high predictive performance is possible even with limited local data, although generalization outside the specific region and period requires additional data. For FireWatch, this supports the idea that zone-level ignition prediction is feasible for local forests, helping define thresholds that automatically trigger drone missions.
+
+Li et al.\ combine IoT-style local sensing with neural networks to estimate fire danger indices, focusing on peatland-relevant variables such as humidity, temperature and other microclimate factors~\cite{li2023}. They report strong agreement with reference indices, with mean squared error of about $1.116$ and correlation near $0.89$. A key advantage is the ability to capture fine-scale conditions that may not appear in coarse-grained weather products; however, the approach predicts an index rather than ignition directly and requires on-site deployment and maintenance of sensors. In FireWatch, such ground sensors could complement weather APIs to refine risk scores before drone dispatch.
+\\ \\
+Sengupta and Woodford propose an explainable machine learning workflow for wildfire occurrence and burned-area prediction~\cite{sengupta2025}. They evaluate multiple models and use SHAP-based analysis to interpret feature importance, reporting very strong classification performance (F1 up to roughly $0.99$) and good burned-area regression metrics (e.g.\ RMSE around $1.9$, MAE about $1.1$) on benchmark datasets. The benefit is a systematic model-selection and interpretation framework; the drawback is reliance on relatively small benchmark datasets that may not fully reflect operational variability. For FireWatch, this work helps justify feature choices and provides a way to explain ``why risk is high'' to operators alongside automated drone missions.
+\\ \\ \\
+Anastasiou et al.\ move beyond ignition and focus on forecasting wildfire spread and perimeter with deep learning segmentation models that use multi-source, multi-day context~\cite{anastasiou2025}. They report measurable gains (around $+5\%$ in F1 and IoU) when including a wider temporal window in the input. This shows that spread-aware forecasting is possible, but it also raises the data and processing requirements and again requires regional validation. In FireWatch, such spread forecasting becomes important after a fire is detected: once drones confirm a fire, spread predictions could support response planning and prioritization.
+\\ 
+\section{Fire Detection Studies}
+
+Bouguettaya et al.\ provide a survey of UAV-based wildfire detection methods that use deep-learning computer vision techniques~\cite{bouguettaya2022}. They categorize approaches by sensor type (RGB, infrared, multispectral) and by model family (image classification, YOLO-style object detection, semantic segmentation), and they discuss challenges such as dataset scarcity, domain shift and edge deployment constraints. Although the paper does not introduce new experiments, it offers a practical roadmap for selecting drone-vision methods. This directly informs FireWatch's choice of a lightweight, real-time detector for onboard or edge processing on drones.
+
+Mukhiddinov et al.\ optimize YOLOv5 architectures for early smoke detection in UAV imagery, including anchor-box tuning and multi-scale enhancements~\cite{mukhiddinov2022}. On their dataset they report mAP@0.5 around $73.6\%$, with improved sensitivity to small smoke plumes. The method shows that careful architecture tuning can significantly improve early smoke detection, although the absolute performance and robustness still depend on dataset diversity. For FireWatch, this work is relevant because confirming small smoke plumes from drones is critical when the weather-based module flags a high-risk day.
+
+Ramadan et al.\ combine IoT sensing with AI-powered drones in an end-to-end early detection framework~\cite{ramadan2024}. Ground sensors monitor environmental conditions; when thresholds are exceeded, a UAV is launched and an onboard CNN verifies the presence of fire. They report very high sensor accuracy (greater than $99\%$) and fire detection performance for the CNN, with rapid alerting. The strength of this approach is multi-modal confirmation, while the drawback is deployment complexity in terms of infrastructure, maintenance and flight constraints. This study closely matches FireWatch's concept of prediction/trigger $\rightarrow$ drone dispatch $\rightarrow$ vision confirmation.
+
+Abramov et al.\ propose a real-time UAV video pipeline that combines stabilization and deblurring, region masking and deep detection/segmentation to improve fire recognition in cluttered scenes~\cite{abramov2024}. They report detector performance around mAP $\approx 78\%$ and segmentation F1-scores near $97\%$ in their setup, with gains when confusing regions such as the sky are masked out. The approach is robust to drone motion and reduces false alarms, but it increases pipeline complexity and compute requirements. For FireWatch, this suggests a design where light pre-processing (e.g.\ masking regions unlikely to contain fire) is combined with fast detectors for live drone feeds.
+
+Mamadmurodov et al.\ develop a hybrid YOLO-based model with attention mechanisms and domain-aware preprocessing aimed at early forest fire detection~\cite{mamadmurodov2025}. They report mAP@0.5 of about $93.1\%$ with high precision and recall at real-time speeds on GPU. The main advantage is the combination of high accuracy and efficiency; the key limitation is that detection is still frame-based, without explicit temporal modeling. For FireWatch, such a model is attractive as a practical starting point for reliable smoke or fire detection on the edge.
+
+He et al.\ evaluate several deep object detection architectures for smoke recognition in forest fire scenarios~\cite{he2025}. After extensive training on diverse wildfire imagery, they obtain strong performance, with mAP@0.5 around $90.1\%$ and high average precision for smoke classes. The benefits are high smoke sensitivity and robust detection; the downsides include heavier training and computation requirements and uncertain feasibility on very constrained onboard hardware. For FireWatch, this work supports the requirement of high-confidence smoke detection to validate high-risk conditions predicted by the weather module.
+\\ \\ 
+
+\section{Limitations of Reviewed Studies}
+
+To clarify the motivation behind the FireWatch design choices, Table~\ref{tab:lit-limitations}
+summarizes the main disadvantages reported across the reviewed wildfire \emph{prediction} and
+\emph{detection} studies. These limitations highlight recurring challenges such as regional
+transferability, dependence on dataset quality and diversity, and the practical constraints of
+deploying AI models on UAV or edge hardware.
+
+\begin{table}[h!]
+\centering
+\caption{Reported limitations of the wildfire prediction and detection studies reviewed in this chapter.}
+\label{tab:lit-limitations}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.12}
+\begin{tabular}{@{}p{1.1cm}p{4.6cm}p{9.2cm}@{}}
+\toprule
+Ref. & Study & Key limitations (disadvantages) \\
+\midrule
+\addlinespace[0.25em]
+\cite{kondylatos2022} & Kondylatos et al.\ (2022) &
+\textbullet\ Region-specific (Eastern Mediterranean); transferability is limited.\newline
+\textbullet\ Focuses on next-day danger only (not multi-day spread/burned area). \\
+
+\cite{shmuel2023} & Shmuel \& Heifetz (2023) &
+\textbullet\ Requires large datasets and substantial computational resources.\newline
+\textbullet\ Limited multi-year/region validation; real-world robustness needs more evidence. \\
+
+\cite{zaidi2023} & Zaidi (2023) &
+\textbullet\ Small dataset (one year, few regions); generalisation is uncertain.\newline
+\textbullet\ Uses mainly meteorology/FWI; omits fuel, topography, and human factors. \\
+
+\cite{li2023} & Li et al.\ (2023) &
+\textbullet\ Single-site (peatland) and short monitoring period; limited generalisation.\newline
+\textbullet\ Predicts FWI rather than observed fire events (operational linkage is indirect). \\
+
+\cite{sengupta2025} & Sengupta \& Woodford (2025) &
+\textbullet\ Built on small regional benchmarks with limited variables.\newline
+\textbullet\ Scalability to operational, large-area deployments remains unclear. \\
+
+\cite{anastasiou2025} & Anastasiou et al.\ (2025) &
+\textbullet\ Calibrated for Mediterranean conditions; may need re-tuning elsewhere.\newline
+\textbullet\ Multi-day/multi-channel inputs increase computational cost. \\
+
+\addlinespace[0.45em]
+\addlinespace[0.25em]
+
+\cite{bouguettaya2022} & Bouguettaya et al.\ (2022) &
+\textbullet\ Survey-only (no new dataset/model for direct benchmarking).\newline
+\textbullet\ Coverage mainly up to 2021; misses newer YOLO/transformer and multimodal systems. \\
+
+\cite{mukhiddinov2022} & Mukhiddinov et al.\ (2022) &
+\textbullet\ Notes dataset quality/size issues that limit real-world generalisation.\newline
+\textbullet\ Reported performance is modest relative to stronger baselines. \\
+
+\cite{ramadan2024} & Ramadan et al.\ (2024) &
+\textbullet\ Limited large-scale field validation under diverse conditions.\newline
+\textbullet\ Deployment constraints (LoRa reliability/RF interference + UAV regulations). \\
+
+\cite{abramov2024} & Abramov et al.\ (2024) &
+\textbullet\ Sensitive to fog/snow and camera orientation (horizon-line dependency).\newline
+\textbullet\ Complex pipeline increases compute needs for low-power UAV deployment. \\
+
+\cite{mamadmurodov2025} & Mamadmurodov et al.\ (2025) &
+\textbullet\ Primarily static-image evaluation; does not model temporal evolution.\newline
+\textbullet\ Limited evidence on long UAV video streams and real-time constraints. \\
+
+\cite{he2025} & He et al.\ (2025) &
+\textbullet\ Struggles in low-contrast/cluttered scenes and overlapping smoke–flame regions.\newline
+\textbullet\ Limited evaluation on edge hardware and real UAV video deployments. \\
+
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\section{Comparative Summary}
+
+Table~\ref{tab:lit-summary} provides a compact comparison of the main prediction and detection studies reviewed in this chapter. It highlights the variety of methods (from ConvLSTM risk forecasters to YOLO-based smoke detectors), the performance levels reported and the parts of the FireWatch pipeline that each study informs.
+
+\begin{table}[h!]
+\centering
+\caption{Very short comparative summary of selected wildfire prediction and detection studies.}
+\label{tab:lit-summary}
+\small
+\begin{tabular}{@{}llp{2.4cm}p{4.3cm}p{3.2cm}@{}}
+\toprule
+Study & Year & Method & Main contribution & Performance \\
+\midrule
+Kondylatos et al.~\cite{kondylatos2022} & 2022 & ConvLSTM & Daily wildfire danger forecasting from spatio-temporal inputs & AUROC $\approx 0.93$; F1 $\approx 0.8$ \\
+Shmuel \& Heifetz~\cite{shmuel2023} & 2023 & XGBoost (MLFWI) & Machine-learning-based fire weather index & AUC $\approx 0.99$; Acc $\approx 0.96$ \\
+Zaidi~\cite{zaidi2023} & 2023 & ANN & Local wildfire ignition prediction for Algerian forests & Acc $\approx 0.967$; F1 $\approx 0.971$ \\
+Li et al.~\cite{li2023} & 2023 & MLP (IoT) & Index prediction from on-site sensor measurements & MSE $= 1.116$; $R \approx 0.89$ \\
+Sengupta \& Woodford~\cite{sengupta2025} & 2025 & XAI + HPO & Explainable models for occurrence and burned-area & F1 up to $\sim 0.99$; RMSE $\approx 1.9$ \\
+Anastasiou et al.~\cite{anastasiou2025} & 2025 & 3D U-Net / ViT & Wildfire spread and perimeter forecasting & About $+5\%$ F1/IoU gain \\
+Bouguettaya et al.~\cite{bouguettaya2022} & 2022 & Review & UAV + DL wildfire detection survey & Qualitative synthesis \\
+Mukhiddinov et al.~\cite{mukhiddinov2022} & 2022 & Optimized YOLOv5 & Early smoke detection in UAV images & mAP@0.5 $\approx 73.6\%$ \\
+Ramadan et al.~\cite{ramadan2024} & 2024 & IoT + UAV CNN & End-to-end early forest fire detection & Accuracy in $\sim 99\%$ range \\
+Abramov et al.~\cite{abramov2024} & 2024 & Video + YOLO / Seg. & Robust UAV video fire detection pipeline & mAP $\sim 78\%$; seg.\ F1 $\sim 97\%$ \\
+Mamadmurodov et al.~\cite{mamadmurodov2025} & 2025 & YOLO + Attention & Efficient early forest fire detection & mAP@0.5 $\approx 93.1\%$ \\
+He et al.~\cite{he2025} & 2025 & Object detection & Forest fire smoke recognition & mAP@0.5 $\approx 90.1\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\clearpage
+
+% ==========================================================
+\chapter{Methodology}
+% ==========================================================
+This section presents the complete methodology of the FireWatch system, from data acquisition to deployment-ready monitoring. First, we describe how the numerical prediction data (meteorological and FWI variables) and the image-based detection data (fire/smoke scenes with annotations) were collected and prepared. Next, we explain the modeling and training workflow for both wildfire risk prediction and vision-based fire/smoke detection, including the evaluated algorithms and the final selected models. Finally, we introduce the end-to-end dashboard that integrates live weather/FWI monitoring, automated drone triggering, real-time camera surveillance, alerting, and a separate Google Earth Engine mapping page that provides pre-event spatial context using historical burned and unburned areas to guide operational focus.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.96\textwidth]{Methodology.png}
+    \caption{Overall methodology and system components of FireWatch, including prediction, detection, backend integration, and dashboard-driven monitoring workflow.}
+    \label{fig:methodology-overview}
+\end{figure}
+
+\section{Data preparation and acquisition }
+
+\subsection{Prediction Data}
+
+One primary data source is the Algerian Forest Fire Dataset from the UCI Machine Learning Repository~\cite{abid2020}. This dataset contains 244 daily observations collected from June to September 2012 in two regions of Algeria (Bejaia in the northeast and Sidi Bel-Abb\`es in the northwest, 122 days each). Each record corresponds to a single day with various meteorological features and fire weather indices, as listed in Table~\ref{tab:algerian-features}. The recorded variables include daily maximum temperature, relative humidity, wind speed, rainfall, and the full set of Fire Weather Index (FWI) system components (Fine Fuel Moisture Code, Duff Moisture Code, Drought Code, Initial Spread Index, Buildup Index, and the overall FWI). The binary output label indicates whether a forest fire occurred on that day (``fire'' or ``no fire''), with 138 fire days and 106 no-fire days in the dataset. These attributes are used as predictor variables to model daily wildfire occurrence.
+
+\begin{table}[h!]
+\centering
+\caption{Key features of the Algerian Forest Fire Dataset, including meteorological variables and FWI components.}
+\label{tab:algerian-features}
+\small
+\begin{tabular}{@{}llllp{2.4cm}@{}}
+\toprule
+Feature & Description & Metric & Range \\
+\midrule
+FWI   & Fire Weather Index               & FWI system  & 0--31.1    \\
+FFMC  & Fine Fuel Moisture Code         & FWI system  & 28.6--92.5  \\
+DMC   & Duff Moisture Code              & FWI system  & 1.1--65.9   \\
+DC    & Drought Code                    & FWI system  & 6.9--220.4   \\
+ISI   & Initial Spread Index            & FWI system  & 0--18.5     \\
+BUI   & Buildup Index                   & FWI system  & 1.1--68.0   \\
+Temp  & Temperature at noon             & $^\circ$C   & 22--42      \\
+RH    & Relative Humidity               & \%          & 21--90      \\
+WS    & Wind Speed                      & km/h        & 6--29       \\
+Rain  & Rainfall                        & mm/m$^2$    & 0--16.8      \\
+Class & Fire occurrence label           & Categorical & `no-fire' or `fire'--  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All FWI component values are computed using the standard Canadian FWI System formulas~\cite{stocks1989}. In simplified form, the system updates fuel moisture codes and then derives spread and intensity indices:
+\begin{align}
+FFMC_t &= FFMC_{t-1}
+        + (0.83 \times P - 0.92)\, e^{-0.0345 \times FFMC_{t-1}} \notag\\
+      &\quad + 0.28 \times (T - H)\,\left(1 - e^{-0.115 \times FFMC_{t-1}}\right)
+\tag{1}
+\end{align}
+
+where $P$ is the rainfall in mm, $T$ is the temperature in $^\circ$C and $H$ is the relative
+humidity measured as a percentage.
+
+\begin{equation}
+DMC_t = DMC_{t-1} + (0.5 \times T) - f(P)
+\tag{2}
+\end{equation}
+
+where $f(P)$ is a rainfall function that reduces $DMC$.
+
+\begin{equation}
+DC_t = DC_{t-1} + k(T) - g(P)
+\tag{3}
+\end{equation}
+
+where $k(T)$ represents a long-term drying function and $g(P)$ represents the effect of rainfall.
+
+\begin{equation}
+ISI = 0.208 \times W_s \times e^{0.05039 \times FFMC}
+\tag{4}
+\end{equation}
+
+where $W_s$ is the wind speed in km/h.
+
+\begin{equation}
+BUI =
+\begin{cases}
+0.8 \times DC \times DMC / (DC + 0.4 \times DMC), & \text{if } DMC > 0,\\[4pt]
+DC, & \text{if } DMC = 0,
+\end{cases}
+\tag{5}
+\end{equation}
+
+\begin{equation}
+FWI = e^{0.1 \times BUI} \times ISI
+\tag{6}
+\end{equation}
+
+The Canadian method integrates these fuel moisture codes to quantify overall fire danger.
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=0.40\textwidth]{Picture2.png}
+\caption{Overview of the Canadian Fire Weather Index (FWI) system structure, adapted from Stocks et al.~\cite{stocks1989}.}
+\label{fig:fwi-structure}
+\end{figure}
+
+\subsection{Detection Data}
+
+For the vision module, a Smoke/Fire image dataset was compiled using the Roboflow platform~\cite{roboflow2022}. This dataset consists of a diverse collection of forest images categorized into three classes: Fire, Smoke, and Not Fire. The classes were balanced with an equal number of images in each category to avoid bias. All images were manually annotated using the Computer Vision Annotation Tool (CVAT), drawing precise bounding boxes around regions of fire or smoke. This curated image dataset was used to train the wildfire detection model, enabling the system to distinguish actual fire events and early smoke signatures from normal (non-fire) scenes.
+\\
+\section{Modeling and Training }
+\label{sec:modeling-training}
+
+This section describes the machine learning workflow used in the FireWatch system, divided into two modules: (1) predicting wildfire risk from meteorological and Fire Weather Index (FWI) variables using the Algerian dataset, and (2) detecting fire/smoke in aerial imagery using the Smoke/Fire dataset.
+
+\subsubsection{Fire Prediction}
+\label{subsec:fire-prediction}
+
+\paragraph{}
+Before training the prediction models, the Algerian tabular dataset was cleaned and prepared to ensure consistent learning behavior across algorithms. In general, we removed incomplete records (null/missing values), corrected data types, and ensured all input variables were numeric and valid. We also checked for duplicated entries and removed them when present. Since some models (especially regularized regression and SVR) are sensitive to feature scale, the input features were standardized (zero mean, unit variance) when required to avoid dominance of large-magnitude variables and to improve convergence and generalization. Finally, the dataset was split into training and testing sets, and cross-validation was used for models that require hyperparameter selection.
+
+\subsubsection{Evaluated models}
+To identify the most reliable predictor for daily fire risk, we trained and compared the following regression models:
+
+\begin{itemize}
+    \item Linear Regression (LR)
+    \item Lasso with Cross-Validation (LassoCV)
+    \item Ridge Regression with Cross-Validation (RidgeCV)
+    \item Elastic Net with Cross-Validation (ElasticNetCV)
+    \item Random Forest (RF)
+    \item Support Vector Regression (SVR)
+    \item Gradient Boosting (GB)
+\end{itemize}
+
+\subsubsection{Conclusion}
+
+After preprocessing, all models were trained under the same experimental setup to enable a fair comparison. Among the evaluated approaches, the best-performing model for wildfire prediction was \textbf{Ridge Regression with Cross-Validation (RidgeCV)}, which provided the strongest balance between stability and generalization on the Algerian FWI-based data. \\ \\ \\
+
+\subsubsection{Fire Detection}
+\label{subsec:fire-detection}
+
+\paragraph{}
+For the detection module, the Smoke/Fire dataset was prepared to support both image classification (CNN) and object detection (YOLOv8). Images were resized to a consistent input resolution and normalized (pixel scaling) to stabilize training. For the CNN baseline, labels were organized into the target classes (Fire, Smoke, No Fire) and the dataset was split into training/validation/testing subsets. For YOLOv8, images were annotated with bounding boxes and converted into the required YOLO annotation format, ensuring correct class indexing and consistent coordinate normalization. Where needed, basic augmentation (e.g., flips/brightness variation) can be applied to improve robustness under real UAV conditions such as haze, glare, and background clutter.
+
+\subsubsection{Evaluated models}
+Two deep learning approaches were implemented:
+
+\begin{itemize}
+    \item Convolutional Neural Network (CNN) baseline classifier
+    \item YOLOv8 object detector
+    \\ \\ 
+\end{itemize}
+
+\paragraph{}
+Table~\ref{tab:cnn-yolo-comparison} summarizes the comparison between the baseline CNN and YOLOv8. Overall, YOLOv8 was more suitable for real-time drone deployment due to faster inference, stronger feature retention after export, higher detection performance (especially for small/early smoke cues), and better robustness in complex outdoor scenes.
+
+\begin{table}[h!]
+\centering
+\caption{Performance comparison between the baseline CNN classifier and the YOLOv8 detector.\\ } 
+\label{tab:cnn-yolo-comparison}
+\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+Aspect & CNN Model (\texttt{.h5}/\texttt{.keras}) & YOLOv8 Model (\texttt{.pt}) \\
+\midrule
+Detection speed        & Slow              & Fast (real-time)  \\
+Feature preservation   & Some loss after export & Strong retention \\
+Detection accuracy     & Lower (misses fine details) & Higher (captures small cues)  \\
+Real-time suitability  & Limited           & Excellent  \\
+Robustness (noise/scenes) & Moderate        & High     \\
+Architecture complexity & Simple (sequential) & Advanced and optimized  \\
+\bottomrule
+\\ \\ \\ \\ \\ \\ \\ \\ \\ 
+\end{tabular}
+\end{table}
+
+
+\section{End-to-End Dashboard}
+\label{subsec:end-to-end-dashboard}
+
+The FireWatch dashboard provides an integrated interface that connects live weather monitoring, FWI-based risk tracking, automated drone response, and operational mapping. It is designed to give operators continuous situational awareness and to support fast, structured decision-making during high-risk periods.
+
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=0.92\textwidth]{sequence diagram_eng.PNG}
+    \caption{FireWatch operational loop in the control panel: weather collection, FWI prediction, drone monitoring, image acquisition/analysis, and notification/reporting.}
+    \label{fig:sequence-diagram-eng}
+\end{figure}
+
+\subsubsection{Control Panel}
+\label{subsubsec:control-panel}
+
+\paragraph{Live weather and FWI monitoring:}
+The main page displays live weather information for the monitored zone(s) and continuously computes the Fire Weather Index (FWI). The current FWI value is presented in real time alongside its risk level to help operators interpret conditions quickly.
+
+\paragraph{Threshold-based drone triggering:}
+When the computed FWI exceeds a predefined threshold, the system automatically initiates the drone mission. Once deployed, the drone camera stream is activated to provide immediate aerial monitoring of the area of interest.
+
+\paragraph{Seasonal continuous monitoring:}
+During the summer season, the monitoring camera remains active for continuous surveillance, even when the FWI is below the threshold. This supports early visual awareness and reduces the chance of missing sudden smoke/fire events.
+
+\paragraph{Detection alerts and notifications:}
+If the vision module detects smoke or fire, the dashboard generates an alert and sends a notification to the responsible authority to enable timely escalation and response.
+
+\subsubsection{Pre-Event Risk Mapping (Google Earth Engine)}
+\label{subsubsec:gee-pre-event-mapping}
+
+In addition to the prediction and detection modules, the dashboard includes a separate mapping page based on Google Earth Engine. This page provides a pre-event spatial context by visualizing historical burned and unburned areas from the previous year. The goal is operational planning rather than model evaluation: the map helps define high-priority zones, guide patrol routes, and focus drone coverage and ground monitoring components on locations that are more likely to require attention during the season.
+
+
+
+\clearpage
+
+% ==========================================================
+% References
+% ==========================================================
+\begin{thebibliography}{99}
+
+\bibitem{colak2020}
+E.~\c{C}olak and F.~Sunar, ``Evaluation of forest fire risk in the Mediterranean Turkish forests: a case study of Menderes region, Izmir,'' \emph{International Journal of Disaster Risk Reduction}, vol.~45, p.~101479, 2020.
+
+\bibitem{goltas2024}
+M.~G\"{o}lta\c{s}, H.~Ayberk, and O.~K\"{u}\c{c}\"{u}k, ``Forest fire occurrence modeling in Southwest Turkey using MaxEnt machine learning technique,'' \emph{iForest -- Biogeosciences and Forestry}, vol.~17, no.~1, pp.~10--18, 2024.
+
+\bibitem{bugaric2025}
+M.~Bugari\'{c}, D.~Krstini\'{c}, L.~\v{S}eri\'{c}, and D.~Stipani\v{c}ev, ``Current trends in wildfire detection, monitoring and surveillance,'' \emph{Fire}, vol.~8, no.~9, Article~356, 2025.
+
+\bibitem{mohapatra2022}
+A.~Mohapatra and T.~Trinh, ``Early wildfire detection technologies: a review,'' \emph{Sustainability}, vol.~14, no.~19, Article~12270, 2022.
+
+\bibitem{rjoub2023}
+D.~Rjoub, A.~Alsharoa, and A.~Masadeh, ``Unmanned-Aircraft-System-Assisted early wildfire detection with air quality sensors,'' \emph{Electronics}, vol.~12, no.~5, p.~1239, 2023.
+
+\bibitem{almeida2022}
+J.~S.~Almeida, C.~Huang, F.~G.~Nogueira, S.~Bhatia, and V.~H.~C.~de~Albuquerque, ``EdgeFireSmoke: a novel lightweight CNN model for real-time video fire--smoke detection,'' \emph{IEEE Transactions on Industrial Informatics}, vol.~18, no.~11, pp.~7889--7898, 2022.
+
+\bibitem{ekberzade2025}
+B.~Ekberzade \emph{et al.}, ``Up in flames: the human factor behind a megafire in Mediterranean T\"{u}rkiye,'' \emph{npj Natural Hazards}, vol.~2, Article~65, 2025.
+
+\bibitem{kondylatos2022}
+S.~Kondylatos \emph{et al.}, ``Wildfire danger prediction and understanding with deep learning,'' \emph{Geophysical Research Letters}, vol.~49, no.~17, Article~e2022GL099368, 2022.
+
+\bibitem{shmuel2023}
+A.~Shmuel and E.~Heifetz, ``Developing novel machine-learning-based fire weather indices,'' \emph{Machine Learning: Science and Technology}, vol.~4, no.~1, Article~015029, 2023.
+
+\bibitem{zaidi2023}
+A.~T.~Zaidi, ``Predicting wildfires in Algerian forests using machine learning models,'' \emph{Heliyon}, vol.~9, no.~7, Article~e18064, 2023.
+
+\bibitem{li2023}
+L.~Li, A.~Sali, N.~K.~Noordin, A.~Ismail, and F.~Hashim, ``Prediction of peatlands forest fires in Malaysia using machine learning,'' \emph{Forests}, vol.~14, no.~7, Article~1472, 2023.
+
+\bibitem{sengupta2025}
+A.~Sengupta and B.~J.~Woodford, ``Recent advances in explainable machine learning models for wildfire prediction,'' \emph{Applied Computing and Geosciences}, vol.~27, Article~100266, 2025.
+
+\bibitem{anastasiou2025}
+N.~Anastasiou, S.~Kondylatos, and I.~Papoutsis, ``Wildfire spread forecasting with deep learning,'' arXiv preprint arXiv:2505.17556, 2025.
+
+\bibitem{bouguettaya2022}
+A.~Bouguettaya, H.~Zarzour, A.~M.~Taberkit, and A.~Kechida, ``A review on early wildfire detection from unmanned aerial vehicles using deep learning-based computer vision algorithms,'' \emph{Signal Processing}, vol.~190, Article~108309, 2022.
+
+\bibitem{mukhiddinov2022}
+M.~Mukhiddinov, A.~B.~Abdusalomov, and J.~Cho, ``A wildfire smoke detection system using unmanned aerial vehicle images based on the optimized YOLOv5,'' \emph{Sensors}, vol.~22, no.~23, Article~9384, 2022.
+
+\bibitem{ramadan2024}
+M.~N.~A.~Ramadan \emph{et al.}, ``Towards early forest fire detection and prevention using AI-powered drones and the IoT,'' \emph{Internet of Things}, vol.~27, Article~101248, 2024.
+
+\bibitem{abramov2024}
+N.~Abramov, Y.~Emelyanova, V.~Fralenko, and V.~Khachumov, ``Intelligent methods for forest fire detection using unmanned aerial vehicles,'' \emph{Fire}, vol.~7, no.~3, Article~89, 2024.
+
+\bibitem{mamadmurodov2025}
+A.~Mamadmurodov \emph{et al.}, ``A hybrid deep learning model for early forest fire detection,'' \emph{Forests}, vol.~16, no.~5, Article~863, 2025.
+
+\bibitem{he2025}
+L.~He, Y.~Zhou, L.~Liu, Y.~Zhang, and J.~Ma, ``Research and application of deep learning object detection methods for forest fire smoke recognition,'' \emph{Scientific Reports}, vol.~15, Article~16328, 2025.
+
+\bibitem{abid2020}
+F.~Abid and N.~Izeboudjen, ``Predicting forest fire in Algeria using data mining techniques: case study of the decision tree algorithm,'' in \emph{Advanced Intelligent Systems for Sustainable Development (AI2SD'2019)}, Springer, 2020.
+
+\bibitem{stocks1989}
+B.~J.~Stocks \emph{et al.}, ``The Canadian Forest Fire Danger Rating System: an overview,'' \emph{Forestry Chronicle}, vol.~65, no.~4, pp.~258--265, 1989.
+
+\bibitem{roboflow2022}
+B.~Dwyer \emph{et al.}, ``Roboflow (Version 1.0) [Software],'' 2022.
+
+
+
+\end{thebibliography}
+
+\end{document}

@@ -15,7 +15,7 @@ model-input layer prepares daily weather inputs and engineered features. The
 prediction layer applies the two-stage wildfire risk model, consisting of a
 Stage 1 \texttt{HistGradientBoostingRegressor} and a Stage 2
 \texttt{RandomForestClassifier}. The visual detection layer uses the active
-YOLOv8 \texttt{best4.pt} detector to identify fire and smoke evidence from
+YOLOv8 \texttt{best.pt} detector to identify fire and smoke evidence from
 camera sources. These layers are coordinated through a FastAPI backend, stored
 through SQLite persistence, and presented through a React/TypeScript
 dashboard. A drone-ready support layer provides mock, Tello-oriented, and demo
@@ -42,6 +42,17 @@ map context in a single interface. The drone-ready layer is included to show
 how future camera streams and supervised patrol demos can connect to the same
 monitoring workflow, but the current system does not claim full autonomous
 production drone deployment.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{system_architecture_firewatch.png}
+  \caption{FireWatch system architecture connecting the React/TypeScript dashboard, FastAPI backend, prediction services, YOLOv8 monitoring services, scheduler, drone-ready service, and SQLite persistence.}
+  \label{fig:system-architecture}
+\end{figure}
+
+Figure~\ref{fig:system-architecture} presents the implemented architecture.
+The design keeps prediction services and monitoring services separate while
+allowing the dashboard to read both through the backend API.
 
 \section{Backend and API Design}
 
@@ -132,13 +143,24 @@ multi-user or deployed monitoring system would likely require a server-based
 database such as PostgreSQL, stronger access control, backup policies, and
 operational monitoring.
 
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.94\textwidth]{sqlite_erd_firewatch.png}
+  \caption{SQLite persistence design showing the main runtime tables used by FireWatch: prediction history, system state, and detection alerts.}
+  \label{fig:sqlite-erd}
+\end{figure}
+
+Figure~\ref{fig:sqlite-erd} shows the key runtime entities. The same SQLite
+database file is used for local persistence, but the monitoring layer writes
+only detection alert records and does not create prediction-history rows.
+
 \section{Prediction and Detection Integration}
 
 FireWatch integrates prediction and detection as two coordinated but logically
 separate workflows. The prediction workflow estimates daily wildfire risk from
 weather-derived features using the Stage 1 and Stage 2 models. The visual
 detection workflow examines live camera frames using the YOLOv8
-\texttt{best4.pt} detector and records visible fire or smoke evidence. Keeping
+\texttt{best.pt} detector and records visible fire or smoke evidence. Keeping
 these workflows separate avoids mixing modelled risk with observed visual
 evidence.
 
@@ -167,6 +189,17 @@ camera or device source, fire/smoke label, confidence value, timestamp, and
 snapshot or evidence reference when available. This gives the dashboard a
 durable alert history and helps operators compare risk likelihood with visual
 evidence from monitoring feeds.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{alert_workflow_firewatch.png}
+  \caption{Detection alert workflow from a YOLOv8 detection event to persistent unread alerts, operator review, read/unread state, and soft deletion.}
+  \label{fig:alert-workflow}
+\end{figure}
+
+Figure~\ref{fig:alert-workflow} explains the alert lifecycle implemented in
+the dashboard. The workflow supports repeated operator review instead of
+treating detections as temporary notifications.
 
 \section{Frontend Dashboard Design}
 
@@ -232,6 +265,17 @@ easier to verify during demonstrations.
 The scheduled run design is still part of a local prototype. It supports
 structured decision support and review, but it does not represent official
 emergency deployment or certified operational wildfire command infrastructure.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{runtime_sequence_firewatch.png}
+  \caption{Runtime sequence for scheduled risk checks, feature generation, two-stage inference, SQLite storage, and dashboard update.}
+  \label{fig:runtime-sequence}
+\end{figure}
+
+Figure~\ref{fig:runtime-sequence} shows that scheduled runs and manual runs
+share the same inference and persistence path. This consistency makes
+operational decisions easier to audit.
 
 \section{Drone-Ready Implementation}
 

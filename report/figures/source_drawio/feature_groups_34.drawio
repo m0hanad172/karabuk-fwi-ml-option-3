@@ -1,0 +1,37 @@
+<mxfile host="app.diagrams.net" modified="2026-05-17T00:00:00.000Z" agent="ChatGPT" version="24.7.17" type="device">
+<diagram name="Figure 3.3 Feature Groups">
+  <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+    <root>
+      <mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="t" value="FireWatch 34-Feature Schema" style="text;html=1;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#111827;" vertex="1" parent="1">
+      <mxGeometry x="390" y="20" width="390" height="40" as="geometry"/>
+    </mxCell><mxCell id="center" value="34 input&lt;br&gt;features" style="ellipse;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#111827;fontSize=18;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="500" y="350" width="160" height="90" as="geometry"/>
+    </mxCell><mxCell id="g1" value="Raw daily weather inputs (8)&lt;br&gt;temperature, rh, ws, precip,&lt;br&gt;cloud_cover_mean,&lt;br&gt;shortwave_radiation_sum,&lt;br&gt;et0_fao_evapotranspiration,&lt;br&gt;soil_moisture_0_to_7cm_mean" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#374151;fontColor=#111827;fontSize=11;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="40" y="110" width="310" height="130" as="geometry"/>
+    </mxCell><mxCell id="g2" value="Seasonal / cyclical features&lt;br&gt;doy_sin, doy_cos,&lt;br&gt;month_sin, month_cos" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#374151;fontColor=#111827;fontSize=11;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="430" y="110" width="270" height="95" as="geometry"/>
+    </mxCell><mxCell id="g3" value="Derived fire-weather features&lt;br&gt;vpd, fuel_drying_rate, hdw,&lt;br&gt;wind_squared, dew_point" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#374151;fontColor=#111827;fontSize=11;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="770" y="110" width="310" height="105" as="geometry"/>
+    </mxCell><mxCell id="g4" value="Rolling history features&lt;br&gt;precip_sum_3d, precip_sum_7d, precip_sum_30d,&lt;br&gt;t_mean_3d, t_mean_7d,&lt;br&gt;rh_min_3d, rh_min_7d,&lt;br&gt;rh_mean_3d, rh_mean_7d,&lt;br&gt;ws_mean_3d, ws_mean_7d,&lt;br&gt;ws_max_3d, ws_max_7d" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#374151;fontColor=#111827;fontSize=11;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="40" y="540" width="350" height="170" as="geometry"/>
+    </mxCell><mxCell id="g5" value="EWMA memory features&lt;br&gt;ewma_t, ewma_rh,&lt;br&gt;ewma_precip" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#374151;fontColor=#111827;fontSize=11;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="450" y="560" width="250" height="100" as="geometry"/>
+    </mxCell><mxCell id="g6" value="Dryness persistence&lt;br&gt;consecutive_dry_days" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f9fafb;strokeColor=#374151;fontColor=#111827;fontSize=11;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="790" y="560" width="250" height="90" as="geometry"/>
+    </mxCell><mxCell id="e1" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#6b7280;" edge="1" parent="1" source="g1" target="center">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e2" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#6b7280;" edge="1" parent="1" source="g2" target="center">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e3" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#6b7280;" edge="1" parent="1" source="g3" target="center">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e4" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#6b7280;" edge="1" parent="1" source="g4" target="center">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e5" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#6b7280;" edge="1" parent="1" source="g5" target="center">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e6" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#6b7280;" edge="1" parent="1" source="g6" target="center">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    </root>
+  </mxGraphModel>
+</diagram>
+</mxfile>

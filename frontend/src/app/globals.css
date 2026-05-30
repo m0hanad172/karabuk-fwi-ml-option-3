@@ -109,6 +109,11 @@
 
   --radius: 0.5rem;
 
+  /* Offline-safe font stacks. Avoid next/font network fetch during builds. */
+  --font-sans: "Ubuntu", "Segoe UI", Arial, sans-serif;
+  --font-display: "Oswald", "Arial Narrow", "Segoe UI", Arial, sans-serif;
+  --font-mono: "Ubuntu Mono", "Cascadia Mono", Consolas, monospace;
+
   /* Sidebar — darker surface, brand-forward */
   --sidebar: #072C2C;
   --sidebar-foreground: #EDEADE;

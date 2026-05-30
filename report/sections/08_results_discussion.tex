@@ -1,265 +1,276 @@
 \chapter{Results and Discussion}
 
-\section{Prediction Model Results}
+\section{Stage 1 Regression Results}
 
-The Stage 1 prediction model was evaluated as a continuous regression model.
-Its purpose is to estimate daily Fire Weather Index (FWI) values from the
-locked set of 34 engineered input features. The selected model is a
-\texttt{HistGradientBoostingRegressor}, and its output is
-\texttt{predicted\_fwi}, which is later used by the dashboard and by the
-high-risk decision layer.
+The Stage 1 model was evaluated as a continuous Fire Weather Index (FWI)
+regression model. Its task is to estimate daily FWI from the locked set of 34
+engineered input features described in Chapter 3. The deployed model is a
+\texttt{HistGradientBoostingRegressor}; its output,
+\texttt{predicted\_fwi}, is the numerical risk estimate shown in the dashboard
+and passed to the high-risk decision layer.
 
-The out-of-fold validation results were RMSE \(=4.111\), MAE \(=2.918\), and
-\(R^2=0.835\). RMSE and MAE are measured in FWI units, so they describe the
-average scale of prediction error relative to the target fire-danger index.
-RMSE is more sensitive to larger errors, while MAE gives a more direct average
-absolute error. The \(R^2\) value indicates that the model explains a large
-portion of the variation in the FWI target during temporal cross-validation.
+Table~\ref{tab:stage1-regression-metrics} reports the verified Stage 1
+metrics from the repository metadata. The out-of-fold validation result was
+RMSE \(=4.111\), MAE \(=2.918\), and \(R^2=0.835\). The 2025 holdout result was
+RMSE \(=7.259\), MAE \(=5.098\), and \(R^2=0.819\). The increase in error on
+the later holdout period is expected because it tests the model on a
+chronologically later season, but the holdout \(R^2\) still indicates that the
+model captures much of the variation in the FWI target.
 
-The 2025 holdout test results were RMSE \(=7.259\), MAE \(=5.098\), and
-\(R^2=0.819\). This holdout period is important because it represents a later
-seasonal period that was not used as part of the training data. The holdout
-performance is weaker than the out-of-fold error values, but the \(R^2\) value
-still shows that the model captures much of the FWI pattern on unseen seasonal
-data.
+\input{tables/stage1_regression_metrics}
 
-Operationally, these results suggest that Stage 1 provides a useful continuous
-risk signal, but not a perfect prediction of official FWI. The model can
-represent broad fire-weather behaviour, yet error remains possible,
-especially under high-variation or unusual weather conditions. This is why the
-system does not rely on the regression value alone as the final operational
-decision.
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.86\textwidth]{stage1_actual_vs_predicted.png}
+  \caption{Stage 1 actual versus predicted FWI comparison for candidate regression models.}
+  \label{fig:stage1-actual-vs-predicted}
+\end{figure}
 
-The continuous \texttt{predicted\_fwi} value remains valuable for dashboard
-decision support. It allows operators to see not only whether a day is treated
-as high risk, but also how close the estimated conditions are to the
-high-risk boundary. This makes the model output easier to interpret than a
-binary label alone.
+Figure~\ref{fig:stage1-actual-vs-predicted} shows that the selected regression
+approach follows the general trend of observed FWI values. The result should
+not be interpreted as exact fire-danger reproduction; instead, it is a
+decision-support estimate that preserves useful information about how close a
+day is to the high-risk boundary.
 
-\section{High-Risk Classification Results}
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.86\textwidth]{stage1_residuals.png}
+  \caption{Stage 1 residual analysis showing prediction error behaviour across FWI values.}
+  \label{fig:stage1-residuals}
+\end{figure}
+
+The residual plot in Figure~\ref{fig:stage1-residuals} is important because
+wildfire risk decisions are sensitive to larger errors near high FWI values.
+The model is useful for daily risk estimation, but the residual pattern also
+supports the need for a second safety-oriented classification layer.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.82\textwidth]{stage1_regression_metric_comparison.png}
+  \caption{Regression benchmark comparison using \(R^2\), RMSE, and MAE.}
+  \label{fig:stage1-metrics}
+\end{figure}
+
+Figure~\ref{fig:stage1-metrics} summarizes the Stage 1 benchmark evidence. The
+combined use of RMSE, MAE, and \(R^2\) is necessary because a single metric
+cannot describe both average error and explained variation.
+
+\FloatBarrier
+
+\section{Stage 2 High-Risk Classification Results}
 
 Stage 2 was evaluated as a high-risk classification layer. It uses a
-\texttt{RandomForestClassifier} with four input features:
+\texttt{RandomForestClassifier} with four inputs:
 \texttt{predicted\_fwi}, \texttt{rh}, \texttt{ws}, and
-\texttt{fuel\_drying\_rate}. The target is \texttt{target\_ge\_35}, where a
-day is considered high risk when \( \mathrm{FWI} \geq 35 \). The stored
-probability threshold for the classifier is 0.10.
+\texttt{fuel\_drying\_rate}. The class target is \texttt{target\_ge\_35},
+where a day is high risk when \( \mathrm{FWI} \geq 35 \). The final stored
+probability threshold is 0.10.
 
-On the test set, Stage 2 achieved precision \(=0.849\), recall \(=0.900\),
-F1-score \(=0.874\), and accuracy \(=0.929\). The confusion matrix contains
-45 true positives, 8 false positives, 5 false negatives, and 126 true
-negatives. These values show that the classifier identifies most high-risk
-days while keeping the number of false alarms at a manageable level for a
-prototype decision-support system.
+Table~\ref{tab:stage2-classification-metrics} gives the final classifier
+values verified from the repository metadata. At threshold 0.10, the Stage 2
+classifier achieved precision \(=0.849\), recall \(=0.900\), F1-score
+\(=0.874\), and accuracy \(=0.929\), with 45 true positives, 8 false
+positives, 5 false negatives, and 126 true negatives.
 
-Recall is especially important in this application because a missed high-risk
-day can have operational consequences. Precision is also important because too
-many false alarms can reduce operator trust and create unnecessary monitoring
-load. The F1-score provides a balanced view of precision and recall, while
-accuracy is useful but not sufficient by itself because high-risk cases are
-less frequent than normal days.
+\input{tables/stage2_classification_metrics}
 
-The comparison results show the benefit of the stacked approach
-for operational safety. A regression-only decision missed 37 high-risk days on
-the 2025 holdout, while the stacked approach reduced missed high-risk days to
-6. This does not eliminate all decision risk, but it demonstrates why Stage 2
-is useful as a safety-oriented layer above the regression backbone.
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.86\textwidth]{stage2_precision_recall_comparison.png}
+  \caption{Stage 2 precision--recall comparison for imbalanced high-risk classification.}
+  \label{fig:stage2-pr-curve}
+\end{figure}
 
-The classification result should therefore be interpreted as decision support,
-not as a guarantee. Stage 2 improves the handling of high-risk cases near the
-decision boundary, but false positives and false negatives remain possible.
-For this reason, FireWatch presents the probability, decision reason, and
-system context to the operator rather than hiding the decision process behind a
-single unexplained label.
+Figure~\ref{fig:stage2-pr-curve} is more informative than accuracy alone
+because high-risk days are less frequent than normal days. In this application,
+recall is especially important: a false negative may reduce attention on a
+genuinely dangerous day. Precision still matters because too many false alarms
+can reduce operator trust and increase monitoring load.
 
-\section{Fire and Smoke Detection Results}
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.68\textwidth]{stage2_final_confusion_matrix_threshold_010.png}
+  \caption{Final Stage 2 high-risk classifier confusion matrix using the report threshold of 0.10.}
+  \label{fig:stage2-confusion-matrix}
+\end{figure}
 
-The visual detection module uses the active YOLOv8 \texttt{best4.pt} model as
-the final fire/smoke detector. The model supports two detection classes: fire
-and smoke. Runtime label handling normalises Fire, fire, flame, and flames to
-\texttt{fire}, and Smoke or smoke to \texttt{smoke}. Unknown labels are handled
-safely rather than being forced into the fire class.
+The confusion matrix in Figure~\ref{fig:stage2-confusion-matrix} uses the
+final report values, not the notebook ablation figure at threshold 0.25. This
+distinction is important because mixing ablation results with the final
+deployed threshold would misrepresent the classifier performance.
 
-The default detection confidence is configured through
-\texttt{MONITORING\_YOLO\_CONF} with a default value of 0.4, and the default
-image size is 640. YOLOv8 is suitable for this role because it localises
-visible fire or smoke regions using bounding boxes rather than only assigning
-an image-level label. This makes the output more useful for live overlays,
-snapshot review, and operator interpretation.
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.72\textwidth]{stage2_final_classifier_metrics.png}
+  \caption{Final Stage 2 classifier metrics at threshold 0.10.}
+  \label{fig:stage2-classifier-metrics}
+\end{figure}
 
-Detection alerts preserve operational evidence in the dashboard workflow.
-When detections are stored, the alert record can include the fire/smoke label,
-confidence value, source camera or device, timestamp, detection list, and
-snapshot or evidence reference when available. Tests also confirm that the
-detection alert path is separated from the prediction history path, so a
-camera alert does not create a wildfire risk prediction run.
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.86\textwidth]{feature_importance_ablation.png}
+  \caption{Feature importance evidence for the enriched Random Forest classifier, highlighting the contribution of the support features.}
+  \label{fig:feature-importance}
+\end{figure}
 
-The current report treats the detection module as validated through
-integration and functional testing rather than through a full benchmark
-evaluation. Confirmed tests cover label normalisation, unknown-label handling,
-alert persistence, source filtering, alert summaries, latest-alert retrieval,
-read/unread state, soft deletion, and separation from the prediction pipeline.
-Because no formal benchmark evaluation for \texttt{best4.pt} is available in
-the current project evidence, mAP, precision, recall, and dataset-size metrics
-are not reported here.
+Figures~\ref{fig:stage2-classifier-metrics} and
+\ref{fig:feature-importance} show that the final decision layer is not a
+black-box replacement for the regression model. It is a compact safety layer
+that uses the Stage 1 output plus humidity, wind, and fuel-drying information
+to reduce missed high-risk cases near the decision boundary.
 
-The detector should be interpreted as a prototype visual confirmation module,
-not as a certified field detector. False positives from bright light, glare,
-reflections, or visually similar objects remain a known limitation. More
-advanced robustness methods, such as multi-frame confirmation, glare
-filtering, bounding-box area filtering, and extended field validation, are not
-implemented in the current prototype.
+\FloatBarrier
 
-\section{Dashboard and Operational Behaviour}
+\section{YOLOv8 Fire and Smoke Detection Results}
 
-The dashboard demonstrates how the FireWatch workflow can be used by an
-operator as a decision-support interface. Instead of presenting prediction,
-detection, alerts, and system information as separate tools, the dashboard
-brings these outputs into a single operational view. This is important because
-wildfire monitoring requires both early risk awareness and rapid review of
-visual evidence when suspicious fire or smoke appears.
+The visual monitoring stage uses the active YOLOv8 \texttt{best.pt} detector
+for two object classes: fire and smoke. The detector provides visual evidence
+through bounding boxes, class labels, and confidence values. This is different
+from the prediction model: prediction estimates fire-weather risk, while YOLOv8
+detection identifies visible evidence in camera or drone-ready frames.
 
-The Overview / Live Monitoring view acts as the main operator-facing area. It
-combines the current risk decision, recent weather and system status, and live
-monitoring feeds. This view supports quick situational awareness without
-requiring the operator to move through several independent tools before
-understanding the current state of the system.
+Object detection should be evaluated with object-detection metrics rather than
+generic image-classification accuracy. Precision measures how many detections
+are correct, recall measures how many relevant objects are found, and
+mAP@0.5 / mAP@0.5:0.95 summarize localisation and classification quality
+across confidence and overlap thresholds. Table~\ref{tab:yolo-detection-metrics}
+therefore reports precision, recall, and mAP values from the uploaded YOLOv8
+training/evaluation output.
 
-The Detection Alerts view provides persistent review of fire and smoke alerts.
-Alerts can preserve the detected label, confidence value, source, timestamp,
-and snapshot or evidence reference when available. The review workflow also
-supports read/unread state and soft deletion, which makes the alert list more
-useful for repeated monitoring sessions. This behaviour is important because
-visual detections should remain available for later inspection rather than
-disappearing after a page refresh or backend restart.
+\input{tables/yolo_detection_metrics}
 
-The Risk Map provides spatial context for the Karabük monitoring area and
-supports planning-oriented interpretation of historical burned-area and risk
-context. It is used as an operator awareness view rather than as a direct
-replacement for the prediction model. The System and Model view summarizes
-model, feature, and configuration information, while the System Flow view
-explains the end-to-end workflow visually. Together, these views make the
-prototype easier to interpret as a complete monitoring system.
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{yolov8_training_results_curves.png}
+  \caption{YOLOv8 training and validation curves for loss and detection metrics.}
+  \label{fig:yolo-training-curves}
+\end{figure}
 
-The main result from the dashboard layer is therefore integration. The
-operator can see risk estimates, live monitoring evidence, alert history,
-system status, and map context in one interface. This does not make the system
-a production emergency platform, but it demonstrates how the individual
-prediction and detection modules can be turned into a practical regional
-monitoring workflow.
+Figure~\ref{fig:yolo-training-curves} provides the main training evidence for
+the available detector run. The uploaded metric summary reports best observed
+precision \(=0.8067\), best recall \(=0.7401\), best mAP@0.5 \(=0.7905\), and
+best mAP@0.5:0.95 \(=0.4558\). The final epoch values were precision
+\(=0.8004\), recall \(=0.7298\), mAP@0.5 \(=0.7806\), and mAP@0.5:0.95
+\(=0.4492\).
 
-\section{Testing and Validation}
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.80\textwidth]{yolov8_precision_recall_curve.png}
+  \caption{Precision--recall curve for fire and smoke detection.}
+  \label{fig:yolo-pr-curve}
+\end{figure}
 
-Testing and validation focused on software correctness, integration behaviour,
-and persistence rather than official field certification. The confirmed backend
-test coverage includes API behaviour, feature and inference checks, scheduler
-configuration, scheduled-run persistence, monitoring alerts, and detection
-alert state management. A final frontend build result is not reported in this
-chapter because no confirmed build record was documented for this reporting
-stage.
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.80\textwidth]{yolov8_f1_confidence_curve.png}
+  \caption{F1-confidence curve used to inspect detection threshold behaviour.}
+  \label{fig:yolo-f1-confidence}
+\end{figure}
 
-Scheduler-related tests confirm that the configured scheduled run slots are
-registered and that a scheduled risk run can write a persisted
-\texttt{run\_history} record. This matters because the scheduler should not be
-only a temporary console process; scheduled decisions need to become part of
-the same operational history that the dashboard can later display and review.
+Figures~\ref{fig:yolo-pr-curve} and~\ref{fig:yolo-f1-confidence} help explain
+threshold behaviour. Lower thresholds can improve recall but may increase
+false positives, while higher thresholds may reduce false alarms but miss
+weaker smoke or fire evidence.
 
-Database and persistence tests confirm that manual and scheduled prediction
-outputs are stored through the SQLite-backed history path. The runtime database
-is documented as \texttt{backend/outputs/karabuk\_fwi.db}, which is local
-runtime/demo data and is ignored by Git. This policy keeps operational state
-out of version control while allowing the local prototype to preserve run
-history and alert review state during normal use.
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.78\textwidth]{yolov8_normalized_confusion_matrix.png}
+  \caption{Normalized confusion matrix for fire, smoke, and background predictions.}
+  \label{fig:yolo-normalized-confusion}
+\end{figure}
 
-Detection alert testing confirms the main behaviours required by the Detection
-Alerts dashboard. The tests cover alert creation, source filtering,
-latest-alert retrieval, summary aggregation, detail lookup, read/unread state,
-mark-all-read behaviour, marking alerts unread again, soft deletion,
-idempotent deletion, snapshot readiness, and preservation of detection labels.
-They also confirm that detection alerts remain separated from prediction
-history, so camera evidence does not accidentally create a wildfire risk run.
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\textwidth]{yolov8_labels_vs_predictions_comparison.jpg}
+  \caption{Example validation images comparing ground-truth labels with YOLOv8 predictions.}
+  \label{fig:yolo-labels-vs-predictions}
+\end{figure}
 
-These tests validate that the prototype components are connected in a
-controlled and reviewable way. They do not prove field performance under all
-weather, camera, lighting, or drone conditions. For this reason, the results
-should be interpreted as software and integration validation for an academic
-prototype, not as certification for operational emergency deployment.
+The normalized confusion matrix in Figure~\ref{fig:yolo-normalized-confusion}
+and the qualitative examples in Figure~\ref{fig:yolo-labels-vs-predictions}
+show how the detector behaves on the available evaluation material. These
+figures support the prototype detection workflow, but they do not prove field
+performance under all lighting, weather, smoke-density, and camera-motion
+conditions. Formal field validation remains future work.
+
+\FloatBarrier
+
+\section{Dashboard and System Validation Results}
+
+The dashboard demonstrates how the FireWatch workflow can be used as an
+operator-facing decision-support interface. It brings together risk estimates,
+monitoring feeds, detection alerts, system/model status, and map context
+instead of leaving each component as a separate tool.
+
+The main validation result from the software layer is integration. Backend
+tests verify API behaviour, inference, decision logic, scheduler behaviour,
+monitoring endpoints, detection alert persistence, read/unread state, soft
+delete behaviour, and separation between detection alerts and prediction
+history. A local frontend lint and production build check also confirmed that
+the React/TypeScript dashboard compiles successfully.
+
+\input{tables/system_validation}
+
+Table~\ref{tab:system-validation} summarizes the system validation evidence.
+These checks demonstrate that the academic prototype works as a connected
+software system. They do not certify official emergency deployment, field
+camera reliability, or fully autonomous drone patrol.
 
 \section{Limitations}
 
 The Stage 1 regression model still has prediction error. Although the
-out-of-fold and holdout results show that the model captures much of the FWI
-pattern, difficult years, unusual weather combinations, and high-variation
-days can still produce larger errors. The predicted FWI value should therefore
-be interpreted as a decision-support estimate rather than a direct substitute
-for official fire-danger products.
+out-of-fold and holdout results show useful performance, unusual weather
+patterns and difficult high-FWI days can still produce larger errors. The
+predicted FWI value should therefore be interpreted as a decision-support
+estimate, not as a replacement for official fire-danger products.
 
-The Stage 2 classifier improves high-risk decision support, but it does not
-remove the possibility of false positives or false negatives. False positives
-can increase monitoring load, while false negatives are more serious because
-they may reduce attention during genuinely dangerous conditions. This is why
-the dashboard presents supporting information such as probability and decision
-reason instead of treating the binary high-risk output as an unquestionable
-decision.
+The Stage 2 classifier improves high-risk decision support but does not remove
+false positives or false negatives. False positives can increase monitoring
+load, while false negatives are more serious because they may reduce attention
+during dangerous conditions. This is why FireWatch shows the probability and
+decision reason rather than hiding the result behind a single unexplained
+label.
 
-The visual detection module also has limitations. The current report does not
-include formal benchmark metrics such as mAP, precision, recall, or evaluation
-dataset size for \texttt{best4.pt}. The detector can identify fire and smoke
-labels in the prototype workflow, but false positives may occur from bright
-light, glare, reflections, or visually similar objects. Multi-frame
-confirmation, glare filtering, bounding-box area filtering, and extended field
-validation are not implemented in the current prototype.
+The YOLOv8 detection stage is also limited. The uploaded training/evaluation
+curves provide useful object-detection evidence, but they are not a substitute
+for extended field validation in Karabük forests, under drone motion, varied
+lighting, glare, fog, and different smoke densities. Multi-frame confirmation,
+glare filtering, bounding-box area filtering, and larger local evaluation
+sets remain future work.
 
-The persistence layer is intentionally lightweight. SQLite is suitable for a
-single-operator local prototype and for demonstration purposes, but it is not
-intended as the final database for a multi-user production deployment. A
-production system would likely require a server-based database, stronger
-access control, backup strategy, and deployment monitoring.
-
-The drone-ready layer should also be understood carefully. FireWatch supports
-mock, Tello-oriented configuration, demo patrol behaviour, stream integration,
-and safety gates, but it is not a fully autonomous drone deployment. Full
-waypoint patrol, return-to-home logic, battery-aware mission planning,
-regulatory flight approval, and production safety validation remain outside
-the current project scope. Finally, the repository stores the processed FWI
-target used for modelling, while the raw external CEMS/Copernicus download
-workflow is treated as part of data preparation rather than as a runtime
-dependency.
+The persistence and drone-ready layers are intentionally prototype-oriented.
+SQLite is appropriate for a local single-machine demonstration, but a deployed
+multi-user system would require a server database, access control, backups,
+and operational monitoring. The drone layer supports mock and Tello-oriented
+workflows with operator safety gates; it does not claim certified autonomous
+drone patrol.
 
 \section{Discussion}
 
-The results answer the research question by showing that a drone-ready
-wildfire monitoring prototype can combine daily risk prediction, visual
-fire/smoke detection, persistent alert management, and dashboard-based
-decision support for the Karabük region. Each part contributes a different
-kind of evidence. Prediction provides early risk awareness, detection provides
-visual confirmation, persistence preserves operational history, and the
-dashboard turns these outputs into a reviewable workflow.
+The results answer the research question by showing that FireWatch can combine
+daily wildfire risk prediction, visual fire/smoke detection, persistent alert
+management, and dashboard-based decision support for the Karabük region. Each
+module contributes a different type of evidence. Stage 1 provides continuous
+fire-weather risk estimation, Stage 2 supports high-risk classification,
+YOLOv8 provides visual evidence, SQLite preserves operational history, and the
+dashboard makes the workflow reviewable.
 
-The two-stage prediction design is useful because it separates continuous risk
-estimation from high-risk decision support. Stage 1 provides a numerical FWI
-estimate that helps operators understand the severity of conditions. Stage 2
-then adds a safety-oriented layer focused on reducing missed high-risk cases
-near the decision boundary. This combination is more informative than a single
-binary output because it preserves both risk intensity and operational
-classification.
+The two-stage prediction design is useful because it separates risk intensity
+from high-risk decision support. A continuous FWI estimate helps operators
+understand severity, while the Stage 2 classifier focuses on reducing missed
+high-risk days near the decision boundary. This is more informative than a
+single binary model because it preserves both the estimated risk level and the
+operational decision.
 
-The detection module adds an important complementary role. Weather-based risk
-prediction cannot confirm whether a fire or smoke is already present, while a
-camera detector alone does not explain whether the broader environmental
-conditions are dangerous. By keeping prediction and detection separate but
-visible in the same dashboard, FireWatch supports both preparedness and visual
-evidence review.
+The detection model adds a complementary role. Weather-based prediction cannot
+confirm that fire or smoke is already visible, and camera detection alone does
+not explain whether the wider weather conditions are dangerous. By keeping
+prediction and detection separate but visible in the same dashboard, FireWatch
+supports both preparedness and visual evidence review.
 
-Persistence is also central to the system value. Prediction runs and detection
-alerts are stored so that decisions and alerts can be reviewed after the
-moment of creation. Read/unread state, soft deletion, latest-alert retrieval,
-and source filtering make the Detection Alerts workflow closer to an operator
-review process rather than a temporary stream of messages.
-
-Overall, FireWatch is strongest as a regional decision-support prototype. It
-does not claim official emergency integration, field certification, or
-production autonomous drone operation. However, the results demonstrate a
-feasible architecture for combining machine learning prediction, computer
-vision detection, local persistence, scheduling, and dashboard monitoring in a
-Karabük-focused wildfire monitoring system.
+Overall, FireWatch is strongest as a regional academic decision-support
+prototype. It does not claim official emergency integration, field
+certification, or production autonomous drone operation. However, the results
+demonstrate a complete engineering workflow that connects machine learning,
+computer vision, persistence, scheduling, and dashboard monitoring into a
+coherent FireWatch prototype.

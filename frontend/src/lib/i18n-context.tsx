@@ -38,16 +38,18 @@ function isLang(value: unknown): value is Lang {
  *   so assistive tech and browser spellcheck switch with the UI.
  */
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(DEFAULT_LANG);
-
-  useEffect(() => {
+  const [lang, setLangState] = useState<Lang>(() => {
+    if (typeof window === "undefined") {
+      return DEFAULT_LANG;
+    }
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (isLang(stored)) setLangState(stored);
+      return isLang(stored) ? stored : DEFAULT_LANG;
     } catch {
-      // localStorage can throw in private mode — safe to ignore.
+      // localStorage can throw in private mode - safe to ignore.
+      return DEFAULT_LANG;
     }
-  }, []);
+  });
 
   useEffect(() => {
     if (typeof document !== "undefined") {

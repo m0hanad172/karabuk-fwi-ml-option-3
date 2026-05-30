@@ -1,0 +1,73 @@
+<mxfile host="app.diagrams.net" modified="2026-05-17T00:00:00.000Z" agent="ChatGPT" version="24.7.17" type="device">
+<diagram name="Figure 3.1 Methodology Workflow">
+  <mxGraphModel dx="1422" dy="794" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+    <root>
+      <mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="t" value="FireWatch Methodology Workflow" style="text;html=1;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#111827;" vertex="1" parent="1">
+      <mxGeometry x="350" y="20" width="480" height="40" as="geometry"/>
+    </mxCell><mxCell id="n1" value="Open-Meteo daily weather aggregates&lt;br&gt;+ processed FWI target" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="40" y="120" width="150" height="75" as="geometry"/>
+    </mxCell><mxCell id="n2" value="Cleaning&lt;br&gt;and alignment" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="225" y="120" width="120" height="75" as="geometry"/>
+    </mxCell><mxCell id="n3" value="May–October&lt;br&gt;seasonal filtering" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="380" y="120" width="135" height="75" as="geometry"/>
+    </mxCell><mxCell id="n4" value="34-feature&lt;br&gt;engineering" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="550" y="120" width="125" height="75" as="geometry"/>
+    </mxCell><mxCell id="n5" value="Stage 1&lt;br&gt;HistGradientBoostingRegressor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="710" y="120" width="165" height="75" as="geometry"/>
+    </mxCell><mxCell id="n6" value="predicted_fwi" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="910" y="120" width="115" height="75" as="geometry"/>
+    </mxCell><mxCell id="n7" value="Stage 2&lt;br&gt;RandomForestClassifier" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="710" y="280" width="165" height="75" as="geometry"/>
+    </mxCell><mxCell id="n8" value="High-risk probability&lt;br&gt;/ risk decision" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="910" y="280" width="150" height="75" as="geometry"/>
+    </mxCell><mxCell id="n9" value="Dashboard decision&lt;br&gt;support" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="910" y="480" width="150" height="75" as="geometry"/>
+    </mxCell><mxCell id="d1" value="Camera / PC webcam&lt;br&gt;/ drone-ready source" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="60" y="480" width="155" height="75" as="geometry"/>
+    </mxCell><mxCell id="d2" value="YOLOv8&lt;br&gt;best.pt" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="260" y="480" width="115" height="75" as="geometry"/>
+    </mxCell><mxCell id="d3" value="Fire/smoke label&lt;br&gt;+ confidence" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="420" y="480" width="145" height="75" as="geometry"/>
+    </mxCell><mxCell id="d4" value="Persistent&lt;br&gt;detection alert" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" vertex="1" parent="1">
+      <mxGeometry x="620" y="480" width="135" height="75" as="geometry"/>
+    </mxCell><mxCell id="db" value="SQLite persistence&lt;br&gt;run_history | system_state | detection_alerts" style="shape=cylinder3d;whiteSpace=wrap;boundedLbl=1;backgroundOutline=1;size=15;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;" vertex="1" parent="1">
+      <mxGeometry x="420" y="650" width="300" height="80" as="geometry"/>
+    </mxCell><mxCell id="label1" value="Weather-based risk prediction path" style="text;html=1;strokeColor=none;fillColor=none;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="60" y="90" width="260" height="30" as="geometry"/>
+    </mxCell><mxCell id="label2" value="Visual detection path" style="text;html=1;strokeColor=none;fillColor=none;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+      <mxGeometry x="60" y="450" width="180" height="30" as="geometry"/>
+    </mxCell><mxCell id="e1" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="n1" target="n2">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e2" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="n2" target="n3">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e3" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="n3" target="n4">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e4" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="n4" target="n5">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e5" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="n5" target="n6">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e6" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="n6" target="n7">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e7" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="n7" target="n8">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e8" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="n8" target="n9">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e9" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="d1" target="d2">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e10" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="d2" target="d3">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e11" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="d3" target="d4">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e12" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="d4" target="n9">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e13" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="n8" target="db">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e14" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="d4" target="db">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell><mxCell id="e15" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" edge="1" parent="1" source="db" target="n9">
+      <mxGeometry relative="1" as="geometry"/>
+    </mxCell>
+    </root>
+  </mxGraphModel>
+</diagram>
+</mxfile>

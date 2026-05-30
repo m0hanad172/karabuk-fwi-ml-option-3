@@ -1,0 +1,17 @@
+\begin{table}[htbp]
+\centering
+\caption{Stage 1 regression performance for continuous FWI prediction.}
+\label{tab:stage1-regression-metrics}
+\begin{tabularx}{\textwidth}{l c c c X}
+\toprule
+Evaluation setting & RMSE & MAE & \(R^2\) & Interpretation \\
+\midrule
+Out-of-fold validation & 4.111 & 2.918 & 0.835 &
+Temporal validation result across training folds; shows strong fit while
+respecting chronological evaluation. \\
+2025 holdout test & 7.259 & 5.098 & 0.819 &
+Later-season holdout result; error increases, but the model still captures
+most variation in the FWI target. \\
+\bottomrule
+\end{tabularx}
+\end{table}

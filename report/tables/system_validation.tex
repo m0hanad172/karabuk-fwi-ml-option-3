@@ -1,0 +1,35 @@
+\begin{table}[htbp]
+\centering
+\caption{System validation evidence from the repository and local verification.}
+\label{tab:system-validation}
+\begin{tabularx}{\textwidth}{l X X X}
+\toprule
+Component & Validation method & Confirmed behaviour & Limitation \\
+\midrule
+Backend API and models &
+Automated backend test suite and smoke check &
+Prediction models load, API routes respond, and smoke check confirms key
+runtime artefacts. &
+Tests are local software checks, not field certification. \\
+Scheduler and run persistence &
+Backend tests for scheduler configuration and scheduled runs &
+Scheduled risk checks use the same persistence path as manual risk checks. &
+Long-term unattended operation was not evaluated. \\
+SQLite persistence &
+Database schema inspection and endpoint tests &
+\texttt{run\_history}, \texttt{system\_state}, and
+\texttt{detection\_alerts} preserve operational state. &
+SQLite is suitable for a local prototype, not multi-user production. \\
+Detection alert workflow &
+Monitoring endpoint tests &
+Alerts support source filtering, latest lookup, read/unread state, and soft
+deletion without writing prediction history. &
+Visual detection robustness under field lighting remains future work. \\
+Dashboard integration &
+Frontend lint and production build verification &
+The React/TypeScript dashboard builds and displays the integrated monitoring
+interface. &
+Usability testing with forestry operators was not conducted. \\
+\bottomrule
+\end{tabularx}
+\end{table}

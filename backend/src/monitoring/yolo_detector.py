@@ -1,7 +1,7 @@
 """Shared YOLO fire detector — lazy, thread-safe singleton.
 
 Used by both camera and drone loops. Loaded from
-``models/fire_detection/best4.pt`` (migrated from the legacy detection
+``models/fire_detection/best.pt`` (migrated from the legacy detection
 reference). This module never reads anything from the Option 3 prediction
 pipeline — it is a detection-only asset.
 """

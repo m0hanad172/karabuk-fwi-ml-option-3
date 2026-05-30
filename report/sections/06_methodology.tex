@@ -32,9 +32,16 @@ on the dashboard. In parallel, the YOLOv8 fire/smoke detector processes camera
 or drone-ready video sources and creates persistent detection alerts when fire
 or smoke is detected.
 
-% TODO: Add Figure: system methodology workflow.
-% TODO: Add Figure: two-stage prediction pipeline.
-% TODO: Add Table: 34 feature groups.
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.92\textwidth]{end_to_end_workflow_flowchart.png}
+  \caption{End-to-end FireWatch workflow from weather input and visual monitoring to prediction, detection alerts, persistence, and dashboard review.}
+  \label{fig:end-to-end-workflow}
+\end{figure}
+
+Figure~\ref{fig:end-to-end-workflow} summarizes the full methodology. It
+shows that weather-based prediction and YOLOv8 visual detection are connected
+inside the same system, but they answer different operational questions.
 
 \section{Study Region and Data Sources}
 
@@ -172,6 +179,17 @@ long the recent period has remained dry. Together, these feature groups allow
 the model to represent short-term conditions, accumulated drying, seasonality,
 and recovery after rainfall.
 
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.82\textwidth]{feature_groups_34.png}
+  \caption{Grouped view of the 34 FireWatch prediction features used by the deployed Stage 1 model.}
+  \label{fig:feature-groups}
+\end{figure}
+
+The feature groups in Figure~\ref{fig:feature-groups} keep the prediction
+schema explainable. They also help ensure that training and runtime inference
+use the same model inputs.
+
 \section{Stage 1: Wildfire Risk Regression Model}
 
 Stage 1 is the core numerical prediction model in the FireWatch pipeline. It
@@ -224,6 +242,17 @@ stored Stage 2 metadata reports the training/test split, probability threshold,
 and classification metrics. These results are discussed later in the Results
 and Discussion chapter.
 
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.90\textwidth]{prediction_stage_flowchart.png}
+  \caption{Prediction-stage workflow showing feature construction, Stage 1 FWI regression, Stage 2 high-risk classification, and final decision logic.}
+  \label{fig:prediction-pipeline}
+\end{figure}
+
+Figure~\ref{fig:prediction-pipeline} highlights why the prediction stage is
+not a single binary classifier. Continuous FWI estimation is preserved first,
+then the high-risk safety layer supports the final operational flag.
+
 \section{Fire and Smoke Detection Methodology}
 
 The visual detection module is separate from the weather-based prediction
@@ -232,7 +261,7 @@ Its role is to inspect camera frames and identify visible fire or smoke
 evidence that can be stored and reviewed by an operator.
 
 The active detector is a custom YOLOv8 object detector loaded from
-\texttt{best4.pt} as the final fire/smoke detection model. The detector
+\texttt{best.pt} as the final fire/smoke detection model. The detector
 supports two classes: fire and smoke. Runtime labels are normalised so that
 Fire, fire, flame, and flames map to \texttt{fire}, while Smoke and smoke map
 to \texttt{smoke}. Unknown labels are handled safely rather than being forced
@@ -250,6 +279,16 @@ bright light, glare, reflections, or visually similar objects remain a known
 limitation. More advanced robustness methods, such as multi-frame
 confirmation, glare filtering, bounding-box area filtering, and extended field
 validation, are left for future work.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.90\textwidth]{detection_stage_flowchart.png}
+  \caption{Detection-stage workflow for camera or drone-ready frames, YOLOv8 fire/smoke inference, alert creation, and dashboard review.}
+  \label{fig:detection-pipeline}
+\end{figure}
+
+Figure~\ref{fig:detection-pipeline} shows the monitoring path as a separate
+evidence pipeline. It does not write prediction runs or alter FWI estimates.
 
 \section{Operational Decision Workflow}
 
@@ -289,4 +328,3 @@ training signal, while Open-Meteo weather variables and engineered memory
 features provide practical runtime inputs. Stage 1 estimates continuous FWI,
 Stage 2 adds a safety layer for high-risk decisions, and the YOLOv8 detector
 supplies visual fire/smoke evidence through a separate monitoring path.
-

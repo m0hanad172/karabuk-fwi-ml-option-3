@@ -104,7 +104,7 @@ To achieve this aim, the project sets the following specific objectives:
   HistGradientBoostingRegressor as the Stage 1 regression model and a
   RandomForestClassifier as the Stage 2 safety classifier.
   \item Detect fire and smoke using a custom YOLOv8 detector with
-  \texttt{best4.pt} as the active detection model.
+  \texttt{best.pt} as the active detection model.
   \item Build a FastAPI backend and a React/TypeScript dashboard to integrate
   prediction outputs, live monitoring views, alerts, and system status.
   \item Store prediction history and detection alerts using SQLite, including
@@ -154,7 +154,7 @@ The main contributions of this thesis are summarized as follows:
   HistGradientBoostingRegressor and a Stage 2 RandomForestClassifier safety
   classifier.
   \item A high-risk target based on \(\mathrm{FWI} \geq 35\).
-  \item A custom YOLOv8 fire/smoke detector using \texttt{best4.pt} as the
+  \item A custom YOLOv8 fire/smoke detector using \texttt{best.pt} as the
   active detection model.
   \item A FastAPI backend and React/TypeScript dashboard that integrate
   prediction outputs, live monitoring views, alert review, and system status.
@@ -175,8 +175,8 @@ feature engineering, prediction modeling, and visual detection methodology.
 Chapter 4 presents the system design and architecture, including the backend,
 frontend, database, scheduler, and drone-ready layer.
 
-Chapter 5 describes the implementation of the FireWatch prototype. Chapter 6
-explains testing and validation, including backend tests, frontend build
-verification, database persistence, detection validation, and alert behavior.
-Chapter 7 presents the results and discussion. Chapter 8 concludes the thesis
-and describes future work.
+Chapter 5 presents the results and discussion, including prediction results,
+YOLOv8 detection evidence, dashboard behaviour, validation, limitations, and
+interpretation. Chapter 6 concludes the thesis and describes future work. The
+appendix provides supplementary visual evidence that supports the main
+chapters without overloading the core report.

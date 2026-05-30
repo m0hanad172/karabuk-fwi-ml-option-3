@@ -236,7 +236,10 @@ export function DetectionAlerts() {
     [refetchAll, selectedId],
   );
 
-  const serverRows = alerts.data?.alerts ?? [];
+  const serverRows = useMemo(
+    () => alerts.data?.alerts ?? [],
+    [alerts.data?.alerts],
+  );
   const rows = useMemo(
     () =>
       serverRows
@@ -256,14 +259,16 @@ export function DetectionAlerts() {
     [localDeletedIds, localReadState, serverRows, summary.data],
   );
 
-  const byCount = summaryData?.by_source ?? {};
   const totalBySource = useMemo(
-    () => ({
-      drone: byCount.drone ?? 0,
-      webcam: byCount.webcam ?? 0,
-      pc_camera: byCount.pc_camera ?? 0,
-    }),
-    [byCount],
+    () => {
+      const byCount = summaryData?.by_source ?? {};
+      return {
+        drone: byCount.drone ?? 0,
+        webcam: byCount.webcam ?? 0,
+        pc_camera: byCount.pc_camera ?? 0,
+      };
+    },
+    [summaryData?.by_source],
   );
 
   return (
@@ -887,34 +892,40 @@ function SnapshotImage({
   placeholderClassName: string;
   compact?: boolean;
 }) {
-  const [attempt, setAttempt] = useState(0);
-  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
   const image = alert.image;
+  const imageKey = image ? `${image}:${alert.snapshot_version ?? ""}` : "";
+  const [attemptState, setAttemptState] = useState({ key: "", value: 0 });
+  const [loadedState, setLoadedState] = useState({ key: "", src: "" });
+  const [failedKey, setFailedKey] = useState<string | null>(null);
+  const attempt = attemptState.key === imageKey ? attemptState.value : 0;
+  const src = image ? snapshotUrl(image, alert.snapshot_version, attempt) : "";
+  const loadedSrc =
+    loadedState.key === imageKey && loadedState.src === src ? loadedState.src : null;
+  const failed = failedKey === imageKey;
 
   useEffect(() => {
     if (!image) {
-      setLoadedSrc(null);
-      setFailed(false);
       return;
     }
 
     let cancelled = false;
-    setLoadedSrc(null);
-    setFailed(false);
-    const src = snapshotUrl(image, alert.snapshot_version, attempt);
     const img = new window.Image();
     img.onload = () => {
-      if (!cancelled) setLoadedSrc(src);
+      if (!cancelled) setLoadedState({ key: imageKey, src });
     };
     img.onerror = () => {
       if (!cancelled) {
         if (attempt < 5) {
           window.setTimeout(() => {
-            if (!cancelled) setAttempt((value) => value + 1);
+            if (!cancelled) {
+              setAttemptState((current) => ({
+                key: imageKey,
+                value: current.key === imageKey ? current.value + 1 : 1,
+              }));
+            }
           }, 1_200);
         } else {
-          setFailed(true);
+          setFailedKey(imageKey);
         }
       }
     };
@@ -922,15 +933,11 @@ function SnapshotImage({
     return () => {
       cancelled = true;
     };
-  }, [image, alert.snapshot_version, attempt]);
-
-  useEffect(() => {
-    setAttempt(0);
-  }, [image, alert.snapshot_version]);
+  }, [attempt, image, imageKey, src]);
 
   if (image && loadedSrc) {
-    // eslint-disable-next-line @next/next/no-img-element
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={loadedSrc}
         alt={`Fire detection snapshot from ${sourceLabel(alert.source)} at ${alert.time_str}`}

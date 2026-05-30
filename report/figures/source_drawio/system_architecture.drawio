@@ -1,0 +1,58 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/27.0.5 Chrome/134.0.6998.205 Electron/35.3.0 Safari/537.36" version="27.0.5">
+  <diagram name="Figure 4.1 System Architecture" id="0">
+    <mxGraphModel dx="1426" dy="841" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="t" value="FireWatch System Architecture" style="text;html=1;strokeColor=none;fillColor=none;fontSize=22;fontStyle=1;fontColor=#111827;" parent="1" vertex="1">
+          <mxGeometry x="380" y="20" width="430" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="l1" value="Data and model input layer&lt;br&gt;Open-Meteo daily weather inputs | Processed FWI target | Camera / webcam / drone-ready video sources" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" parent="1" vertex="1">
+          <mxGeometry x="120" y="90" width="920" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="p" value="Prediction layer&lt;br&gt;34-feature pipeline → Stage 1 HistGradientBoostingRegressor → Stage 2 RandomForestClassifier" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" parent="1" vertex="1">
+          <mxGeometry x="120" y="230" width="400" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="v" value="Visual detection layer&lt;br&gt;YOLOv8 best.pt fire/smoke detector" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" parent="1" vertex="1">
+          <mxGeometry x="650" y="230" width="340" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="api" value="FastAPI backend / API layer&lt;br&gt;Prediction endpoints | Monitoring endpoints | Alert endpoints | Scheduler/system endpoints | Drone-ready endpoints" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" parent="1" vertex="1">
+          <mxGeometry x="220" y="390" width="720" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="sql" value="SQLite persistence layer&lt;br&gt;run_history | system_state | detection_alerts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" parent="1" vertex="1">
+          <mxGeometry x="250" y="540" width="320" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="dash" value="React / TypeScript dashboard layer&lt;br&gt;Overview / Live Monitoring | Detection Alerts | Risk Map | System and Model | System Flow" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" parent="1" vertex="1">
+          <mxGeometry x="650" y="540" width="350" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="drone" value="Drone-ready support layer&lt;br&gt;Tello-oriented configuration | Demo patrol | Safety gates | Emergency stop" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1f2937;fontColor=#111827;fontSize=12;arcSize=12;" parent="1" vertex="1">
+          <mxGeometry x="340" y="690" width="500" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" parent="1" source="l1" target="p" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" parent="1" source="l1" target="v" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" parent="1" source="p" target="api" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" parent="1" source="v" target="api" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" parent="1" source="api" target="sql" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" parent="1" source="api" target="dash" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" parent="1" source="sql" target="drone" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="" style="endArrow=block;html=1;rounded=0;strokeColor=#374151;fontColor=#111827;" parent="1" source="dash" target="drone" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
