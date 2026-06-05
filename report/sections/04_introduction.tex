@@ -64,14 +64,6 @@ monitoring approach can help forestry authorities and operators focus limited
 resources on the most vulnerable periods and locations instead of monitoring
 large areas uniformly.
 
-For computer engineering, the project is also important as a practical case
-study that integrates several disciplines: machine learning for wildfire risk
-prediction, computer vision for fire/smoke detection, backend service
-development, database persistence, and dashboard design for decision support.
-The final FireWatch prototype combines a two-stage machine learning prediction
-workflow, a custom YOLOv8 fire/smoke detector, a FastAPI backend, a
-React/TypeScript dashboard, and SQLite persistence.
-
 The drone-ready layer adds another engineering dimension by preparing the
 system for future patrol support. In the current implementation, this layer is
 limited to mock, Tello, and demo support and should be understood as a
@@ -96,23 +88,10 @@ region.
 To achieve this aim, the project sets the following specific objectives:
 
 \begin{enumerate}
-  \item Build a wildfire risk prediction workflow using 2012--2025 seasonal
-  Karabük records.
-  \item Develop a 34-feature engineering pipeline for regional daily risk
-  estimation.
-  \item Implement a two-stage machine learning model using a
-  HistGradientBoostingRegressor as the Stage 1 regression model and a
-  RandomForestClassifier as the Stage 2 safety classifier.
-  \item Detect fire and smoke using a custom YOLOv8 detector with
-  \texttt{best.pt} as the active detection model.
-  \item Build a FastAPI backend and a React/TypeScript dashboard to integrate
-  prediction outputs, live monitoring views, alerts, and system status.
-  \item Store prediction history and detection alerts using SQLite, including
-  persistent alert review states.
-  \item Validate the prototype through backend tests, frontend build checks,
-  scheduler verification, persistence checks, and detection testing.
-  \item Provide drone-ready monitoring support without claiming full
-  autonomous production deployment.
+  \item Predict FWI and high risk days using machine learning instead of traditional calculation methods.
+  \item Flag high-risk days early using a clear threshold based on historical fire records.
+  \item Detect and confirm fire/smoke in real time using a custom YOLOv8 model.
+  \item Integrate prediction, detection, alerts, and dashboard monitoring into one unified system.
 \end{enumerate}
 
 Each objective directly addresses limitations identified in the problem
@@ -128,19 +107,8 @@ Black Sea region and is characterized by extensive forest coverage and mixed
 terrain, where seasonal heat, dry winds, and human activity near roads and
 settlements can elevate wildfire risk.
 
-Within this scope, FireWatch focuses on daily wildfire risk prediction using
-2012--2025 seasonal Karabük records, live webcam/PC/drone-ready fire/smoke
-detection, SQLite persistence for prediction runs and detection alerts, and a
-dashboard that includes operational views such as Risk Decision, Detection
-Alerts, System and Model, System Flow, and a Risk Map. The project is intended
-as an academic prototype and regional pilot, not as a replacement for official
-emergency response systems.
-
-Full autonomous drone operations, long-term province-wide sensor deployment,
-regulatory flight approval, mission planning, waypoint navigation, and
-production safety certification are outside the current scope. These items are
-treated as future work.
-
+The project focuses on the period from 2012 to 2025, which includes 14 fire seasons
+and provides a rich dataset for training and testing the prediction model.
 \section{Main Contributions}
 
 The main contributions of this thesis are summarized as follows:
@@ -153,15 +121,8 @@ The main contributions of this thesis are summarized as follows:
   \item A two-stage prediction model using a Stage 1
   HistGradientBoostingRegressor and a Stage 2 RandomForestClassifier safety
   classifier.
-  \item A high-risk target based on \(\mathrm{FWI} \geq 35\).
   \item A custom YOLOv8 fire/smoke detector using \texttt{best.pt} as the
   active detection model.
-  \item A FastAPI backend and React/TypeScript dashboard that integrate
-  prediction outputs, live monitoring views, alert review, and system status.
-  \item SQLite-based persistence for prediction history, detection alerts,
-  snapshots, read/unread state, and soft deletion.
-  \item Scheduled operational risk checks at 09:00, 11:00, and 15:00 Istanbul
-  time.
   \item A dashboard that includes Live Monitoring, Risk Decision, Risk Map,
   Detection Alerts, System and Model, and System Flow views.
 \end{itemize}
@@ -177,6 +138,4 @@ frontend, database, scheduler, and drone-ready layer.
 
 Chapter 5 presents the results and discussion, including prediction results,
 YOLOv8 detection evidence, dashboard behaviour, validation, limitations, and
-interpretation. Chapter 6 concludes the thesis and describes future work. The
-appendix provides supplementary visual evidence that supports the main
-chapters without overloading the core report.
+interpretation. Chapter 6 concludes the thesis and describes future work.
