@@ -279,33 +279,34 @@ operational decisions easier to audit.
 
 \section{Drone-Ready Implementation}
 
-FireWatch includes a drone-ready layer to prepare the prototype for supervised
-aerial monitoring. This layer is designed to connect camera-based monitoring
-with future drone streams while keeping physical drone operation under
-operator control. It supports the project goal of being drone-ready without
-claiming certified autonomous deployment.
+FireWatch includes a drone-ready layer for supervised aerial monitoring with
+operator-controlled DJI Tello testing. This layer connects camera-based
+monitoring with a real drone video source while keeping physical drone
+operation under explicit operator control. It supports the project goal of
+being drone-ready and hardware-testable without claiming certified autonomous
+deployment.
 
-The current implementation supports mock mode and Tello-oriented
-configuration. Mock mode allows the drone workflow to be tested without real
-hardware, which is useful for demonstrations, interface checks, and safe
-development. Tello mode prepares the system for a configured drone adapter,
-including connection status, video stream handling, battery/status reporting,
-emergency stop support, and controlled demo behaviour when the required safety
-flags are enabled.
+The current implementation supports two execution paths: mock mode and Tello
+mode. Mock mode remains available for development, demonstrations without
+hardware, interface checks, and automated testing. Tello mode allows the system
+to work with a configured DJI Tello drone, including connection status, video
+stream handling, battery/status reporting, emergency stop support, and a short
+controlled demo patrol when the required safety flags are enabled.
 
 Drone-ready support is connected to the monitoring and dashboard workflow.
 The system can expose drone status, stream state, patrol recommendation state,
 and demo patrol results to the operator interface. The same fire/smoke
-detection path can process a drone-ready video source, so future aerial
-monitoring can reuse the alerting and persistence design already used for
+detection path can process frames from the drone-ready video source, allowing
+the Tello stream to reuse the alerting and persistence design already used for
 local camera feeds.
 
 Physical movement is protected by safety gates. Manual controls are blocked by
 default unless explicitly enabled. Takeoff or demo movement requires explicit
-configuration and operator confirmation, and emergency stop support is
-available through the drone-ready API layer. This design keeps the prototype
-safe for academic demonstration and prevents risk prediction from directly
-causing uncontrolled hardware movement.
+configuration, sufficient battery status, an active Tello connection, and
+operator confirmation. Emergency stop support is available through the
+drone-ready API layer. This design keeps the prototype safe for academic
+demonstration and prevents risk prediction from directly causing uncontrolled
+hardware movement.
 
 High-risk prediction can support patrol recommendation or monitoring priority,
 but the current project does not claim full autonomous production launch.
