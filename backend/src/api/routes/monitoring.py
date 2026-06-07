@@ -157,7 +157,7 @@ async def drone_status():
     return drn.get_drone_status()
 
 
-@router.post("/drone/start", summary="Start the drone feed")
+@router.post("/drone/start", summary="Start the real drone feed and patrol")
 async def drone_start():
     try:
         return drn.start_drone()

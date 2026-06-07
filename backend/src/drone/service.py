@@ -24,8 +24,8 @@ class DroneService:
     """Operator-controlled drone-ready runtime service.
 
     This layer owns video streaming and optional fire/smoke detection on drone
-    frames. It is deliberately separate from the risk prediction path; high risk
-    may recommend patrol, but never calls this service directly.
+    frames. Risk prediction remains separate, but qualifying operational
+    high-risk checks may call this service through explicit trigger gates.
     """
 
     def __init__(self):
@@ -41,6 +41,7 @@ class DroneService:
         self._inference_fps = 0.0
         self._demo_status = "idle"
         self._demo_last_message: str | None = None
+        self._patrol_thread: threading.Thread | None = None
 
     def _build_controller(self, mode: str) -> DroneController:
         if mode == "tello":
@@ -73,6 +74,46 @@ class DroneService:
             else:
                 self._stream_requested = False
         return self._decorate(status)
+
+    def start_feed_patrol(self) -> dict:
+        """Start the real-drone feed and launch the controlled patrol cycle."""
+        if self.controller.mode != "tello":
+            raise DroneSafetyError(
+                "Real drone feed requires DRONE_MODE=tello; mock feed is disabled."
+            )
+        if not settings.DRONE_ALLOW_AUTO_TAKEOFF:
+            raise DroneSafetyError("Drone takeoff is disabled by DRONE_ALLOW_AUTO_TAKEOFF")
+
+        status = self.start_stream()
+        if not status.get("stream_active"):
+            message = (
+                status.get("last_error")
+                or "No drone is connected. Connect the Tello first, then start the feed."
+            )
+            with self._lock:
+                self._demo_status = "blocked"
+                self._demo_last_message = message
+            status["last_error"] = message
+            status["demo_patrol_status"] = "blocked"
+            status["demo_patrol_message"] = message
+            return status
+
+        with self._lock:
+            if self._patrol_thread is not None and self._patrol_thread.is_alive():
+                self._demo_status = "running"
+                self._demo_last_message = "Controlled drone patrol already running"
+                return self._decorate(self.controller.get_status())
+
+            self._demo_status = "running"
+            self._demo_last_message = "Controlled drone patrol running"
+            self._patrol_thread = threading.Thread(
+                target=self._feed_patrol_loop,
+                daemon=True,
+                name="drone-feed-patrol",
+            )
+            self._patrol_thread.start()
+
+        return self._decorate(self.controller.get_status())
 
     def stop_stream(self) -> dict:
         with self._lock:
@@ -111,27 +152,39 @@ class DroneService:
             self._inference_fps = 0.0
         return self._decorate(status)
 
+    def _feed_patrol_loop(self) -> None:
+        try:
+            route = self.controller.demo_patrol(
+                settings.DRONE_DEMO_MOVE_CM,
+                settings.DRONE_DEMO_UP_CM,
+                settings.DRONE_DEMO_HOVER_SECONDS,
+                settings.DRONE_DEMO_COMMAND_DELAY_SECONDS,
+            )
+        except Exception as e:  # noqa: BLE001
+            with self._lock:
+                self._demo_status = "blocked"
+                self._demo_last_message = f"Tello patrol failed: {e}"
+            logger.warning("Tello patrol failed from Start feed: %s", e)
+        else:
+            with self._lock:
+                self._demo_status = "completed"
+                self._demo_last_message = (
+                    "Controlled Tello patrol completed: " + ", ".join(route)
+                )
+        finally:
+            try:
+                self.stop_stream()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Could not stop drone stream after patrol: %s", e)
+
     def demo_patrol(self, mode: str, operator_confirmed: bool = False) -> dict:
         """Run a demo-only patrol without touching prediction/run history."""
         requested_mode = (mode or "mock").strip().lower()
         if requested_mode == "mock":
-            with self._lock:
-                self._demo_status = "running"
-                mock = MockDroneController()
-                route = mock.demo_patrol(
-                    settings.DRONE_DEMO_MOVE_CM,
-                    settings.DRONE_DEMO_UP_CM,
-                    settings.DRONE_DEMO_COMMAND_DELAY_SECONDS,
-                )
-                self._demo_status = "completed"
-                self._demo_last_message = "Mock demo patrol completed"
-            return {
-                "ok": True,
-                "mode": "mock",
-                "status": "completed",
-                "message": "Mock demo patrol completed",
-                "route": route,
-            }
+            controller = self.controller
+            if controller.mode != "mock":
+                controller = MockDroneController()
+            return self._run_demo_cycle(controller, "mock", "Mock demo patrol completed")
 
         blocked = self._tello_demo_block_reason(operator_confirmed)
         if blocked:
@@ -144,32 +197,117 @@ class DroneService:
                 "message": blocked,
             }
 
+        return self._run_demo_cycle(
+            self.controller,
+            "tello",
+            "Controlled Tello demo patrol completed",
+        )
+
+    def maybe_run_probability_patrol(
+        self,
+        run_result: dict,
+        allow_drone_trigger: bool,
+    ) -> dict:
+        """Apply the demo patrol cycle to qualifying operational risk checks."""
+        probability = run_result.get("high_risk_probability")
+        try:
+            probability_value = float(probability)
+        except (TypeError, ValueError):
+            probability_value = 0.0
+
+        threshold = settings.DEFAULT_PROBABILITY_THRESHOLD
+        if not allow_drone_trigger:
+            return {
+                "ok": False,
+                "status": "skipped",
+                "message": "Drone trigger disabled for this risk check",
+            }
+        if not run_result.get("high_risk_flag"):
+            return {
+                "ok": False,
+                "status": "skipped",
+                "message": "High-risk flag is not active",
+            }
+        if probability_value < threshold:
+            return {
+                "ok": False,
+                "status": "skipped",
+                "message": (
+                    f"Probability {probability_value:.3f} is below "
+                    f"threshold {threshold:.3f}"
+                ),
+            }
+
+        return self.demo_patrol(
+            settings.DRONE_MODE,
+            operator_confirmed=allow_drone_trigger,
+        )
+
+    def _run_demo_cycle(
+        self,
+        controller: DroneController,
+        mode: str,
+        completed_message: str,
+    ) -> dict:
         with self._lock:
             self._demo_status = "running"
-            try:
-                route = self.controller.demo_patrol(
-                    settings.DRONE_DEMO_MOVE_CM,
-                    settings.DRONE_DEMO_UP_CM,
-                    settings.DRONE_DEMO_COMMAND_DELAY_SECONDS,
-                )
-            except Exception as e:  # noqa: BLE001
+            self._demo_last_message = "Starting controlled drone patrol"
+
+        stream_started = False
+        using_service_controller = controller is self.controller
+        try:
+            if using_service_controller:
+                stream_status = self.start_stream()
+                stream_started = bool(stream_status.get("stream_active"))
+                if not stream_started:
+                    message = (
+                        stream_status.get("last_error")
+                        or "Drone stream could not be started"
+                    )
+                    with self._lock:
+                        self._demo_status = "blocked"
+                        self._demo_last_message = message
+                    return {
+                        "ok": False,
+                        "mode": mode,
+                        "status": "blocked",
+                        "message": message,
+                    }
+            else:
+                controller.start_stream()
+
+            route = controller.demo_patrol(
+                settings.DRONE_DEMO_MOVE_CM,
+                settings.DRONE_DEMO_UP_CM,
+                settings.DRONE_DEMO_HOVER_SECONDS,
+                settings.DRONE_DEMO_COMMAND_DELAY_SECONDS,
+            )
+        except Exception as e:  # noqa: BLE001
+            with self._lock:
                 self._demo_status = "blocked"
-                self._demo_last_message = f"Tello demo patrol failed: {e}"
-                return {
-                    "ok": False,
-                    "mode": "tello",
-                    "status": "blocked",
-                    "message": self._demo_last_message,
-                }
-            self._demo_status = "completed"
-            self._demo_last_message = "Controlled Tello demo patrol completed"
+                self._demo_last_message = f"{mode.title()} demo patrol failed: {e}"
             return {
-                "ok": True,
-                "mode": "tello",
-                "status": "completed",
-                "message": "Controlled Tello demo patrol completed",
-                "route": route,
+                "ok": False,
+                "mode": mode,
+                "status": "blocked",
+                "message": self._demo_last_message,
             }
+        finally:
+            if using_service_controller and stream_started:
+                self.stop_stream()
+            elif not using_service_controller:
+                controller.stop_stream()
+
+        with self._lock:
+            self._demo_status = "completed"
+            self._demo_last_message = completed_message
+        return {
+            "ok": True,
+            "mode": mode,
+            "status": "completed",
+            "message": completed_message,
+            "route": route,
+        }
 
     def _tello_demo_block_reason(self, operator_confirmed: bool) -> str | None:
         if settings.DRONE_MODE != "tello" or self.controller.mode != "tello":
@@ -186,7 +324,10 @@ class DroneService:
 
         status = self.controller.get_status()
         if not status.connected:
-            return "Tello is not connected"
+            return (
+                "No drone is connected. Connect the Tello first, then run "
+                "the demo patrol."
+            )
         if status.emergency_stopped:
             return "Emergency stop is active"
         if status.battery is None:
@@ -202,17 +343,43 @@ class DroneService:
         active = bool((risk_state or {}).get("active_alert_window"))
         return {
             "patrol_recommended": active,
-            "physical_launch_allowed": False,
+            "physical_launch_allowed": active and settings.DRONE_ALLOW_AUTO_TAKEOFF,
             "operator_confirmation_required": settings.DRONE_REQUIRE_OPERATOR_CONFIRMATION,
             "slot_minutes": settings.DRONE_PATROL_SLOT_MINUTES,
             "afternoon_cutoff_hour": settings.DRONE_AFTERNOON_CUTOFF_HOUR,
             "station_id": settings.DRONE_DEFAULT_STATION_ID,
             "message": (
-                "High Risk prepares patrol; it does not auto-launch hardware."
+                "High Risk can run the controlled patrol when safety gates allow."
                 if active
                 else "No active high-risk patrol recommendation."
             ),
         }
+
+    def _draw_detections(self, frame, detections: list[dict]):
+        try:
+            import cv2
+        except ImportError:
+            return frame
+
+        draw = frame.copy()
+        for det in detections:
+            try:
+                x1, y1, x2, y2 = [int(v) for v in det["bbox"]]
+                label = str(det.get("label") or "fire").capitalize()
+                conf = float(det.get("confidence") or 0.0)
+                cv2.rectangle(draw, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                cv2.putText(
+                    draw,
+                    f"{label} {conf:.2f}",
+                    (x1, max(0, y1 - 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 0, 255),
+                    2,
+                )
+            except Exception:  # noqa: BLE001
+                continue
+        return draw
 
     def mjpeg_generator(self) -> Generator[bytes, None, None]:
         try:
@@ -227,24 +394,7 @@ class DroneService:
                 time.sleep(0.2)
                 continue
 
-            draw = frame.copy()
-            for det in self._detections:
-                try:
-                    x1, y1, x2, y2 = [int(v) for v in det["bbox"]]
-                    conf = det.get("confidence", 0.0)
-                    label = str(det.get("label") or "unknown").strip().upper()
-                    cv2.rectangle(draw, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                    cv2.putText(
-                        draw, 
-                        f"{label} {conf:.2f}",
-                        (x1, max(0, y1 - 10)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 
-                        0.6, 
-                        (0, 0, 255), 
-                        2
-                    )
-                except Exception:  # noqa: BLE001
-                    continue
+            draw = self._draw_detections(frame, self._detections)
 
             ok, buf = cv2.imencode(".jpg", draw, [cv2.IMWRITE_JPEG_QUALITY, 80])
             if ok:
@@ -300,7 +450,8 @@ class DroneService:
             self._detections = detections
             inferences += 1
             if detections and notif.should_notify("drone"):
-                image_url = notif.save_snapshot("drone", frame)
+                annotated = self._draw_detections(frame, detections)
+                image_url = notif.save_snapshot("drone", annotated)
                 notif.add_notification("drone", detections, image_url)
             now = time.time()
             if now - last_sample >= 1.0:

@@ -156,6 +156,57 @@ class TestSchedulerPersistence:
         assert persisted is not None
         assert persisted["run_type"] == "scheduled"
 
+    def test_operational_high_probability_run_starts_controlled_patrol(
+        self, monkeypatch
+    ):
+        from src.api.services import risk_service
+        import src.drone.service as drone_service
+
+        calls = []
+
+        def fake_run_risk_check(
+            target_date=None,
+            run_type="manual",
+            allow_drone_trigger=None,
+        ):
+            return _make_run(
+                run_id="prob_patrol_001",
+                run_type=run_type,
+                target_date=target_date or "2026-05-03",
+                high_risk_probability=0.12,
+                high_risk_flag=1,
+                drone_state={
+                    "active_alert_window": True,
+                    "drone_status": "ACTIVE_CYCLE",
+                },
+                thresholds={"probability_threshold": 0.10},
+            )
+
+        class FakeDroneService:
+            def maybe_run_probability_patrol(self, result, allow_drone_trigger):
+                calls.append((result["run_id"], allow_drone_trigger))
+                return {
+                    "ok": True,
+                    "status": "completed",
+                    "message": "Controlled patrol completed",
+                }
+
+        monkeypatch.setattr(risk_service, "run_risk_check", fake_run_risk_check)
+        monkeypatch.setattr(
+            drone_service,
+            "get_drone_service",
+            lambda: FakeDroneService(),
+        )
+
+        result = risk_service.execute_risk_check(
+            target_date="2026-05-03",
+            run_type="manual",
+            allow_drone_trigger=True,
+        )
+
+        assert calls == [("prob_patrol_001", True)]
+        assert result["drone_patrol_result"]["status"] == "completed"
+
 
 class TestHistoryEndpoints:
     def test_run_history_empty(self, client):
@@ -261,7 +312,25 @@ class _FakeTelloController:
     def __init__(self, battery: int | None, connected: bool):
         self.battery = battery
         self.connected = connected
+        self.stream_active = False
         self.demo_called = False
+        self.connect_called = False
+
+    def connect(self):
+        self.connect_called = True
+        self.connected = True
+        return self.get_status()
+
+    def start_stream(self):
+        self.stream_active = True
+        return self.get_status()
+
+    def stop_stream(self):
+        self.stream_active = False
+        return self.get_status()
+
+    def get_frame(self):
+        return None
 
     def get_status(self):
         from src.drone.models import DroneStatus
@@ -269,18 +338,23 @@ class _FakeTelloController:
         return DroneStatus(
             mode="tello",
             connected=self.connected,
-            stream_active=False,
+            stream_active=self.stream_active,
             hardware_available=True,
             battery=self.battery,
             emergency_stopped=False,
         )
 
-    def demo_patrol(self, move_cm: int, up_cm: int, delay_seconds: float):
+    def demo_patrol(
+        self,
+        move_cm: int,
+        up_cm: int,
+        hover_seconds: float,
+        delay_seconds: float,
+    ):
         self.demo_called = True
         return [
             "takeoff",
-            f"move_up {up_cm}cm",
-            f"move_forward {move_cm}cm",
+            f"hover {hover_seconds:g}s",
             "land",
         ]
 
@@ -299,11 +373,21 @@ def _install_fake_tello_service(monkeypatch, fake: _FakeTelloController) -> None
     service.controller = fake
 
 
+def _use_mock_drone(monkeypatch) -> None:
+    from configs import settings
+    from src.drone.service import reset_drone_service_for_tests
+
+    monkeypatch.setattr(settings, "DRONE_MODE", "mock")
+    reset_drone_service_for_tests()
+
+
 class TestOperatorDroneLayer:
     @pytest.fixture(autouse=True)
-    def _reset_drone(self):
+    def _reset_drone(self, monkeypatch):
+        from configs import settings
         from src.drone.service import reset_drone_service_for_tests
 
+        monkeypatch.setattr(settings, "DRONE_DEMO_HOVER_SECONDS", 0.0)
         reset_drone_service_for_tests()
         yield
         reset_drone_service_for_tests()
@@ -312,11 +396,13 @@ class TestOperatorDroneLayer:
         r = client.get("/drone/status")
         assert r.status_code == 200
         data = r.json()
-        assert data["mode"] == "mock"
+        assert data["mode"] == "tello"
         assert data["connected"] is False
         assert data["stream_active"] is False
 
-    def test_mock_connect_disconnect(self, client):
+    def test_mock_connect_disconnect(self, client, monkeypatch):
+        _use_mock_drone(monkeypatch)
+
         connected = client.post("/drone/connect")
         assert connected.status_code == 200
         assert connected.json()["connected"] is True
@@ -325,7 +411,9 @@ class TestOperatorDroneLayer:
         assert disconnected.status_code == 200
         assert disconnected.json()["connected"] is False
 
-    def test_mock_start_stop_stream(self, client):
+    def test_mock_start_stop_stream(self, client, monkeypatch):
+        _use_mock_drone(monkeypatch)
+
         started = client.post("/drone/stream/start")
         assert started.status_code == 200
         assert started.json()["mode"] == "mock"
@@ -335,6 +423,86 @@ class TestOperatorDroneLayer:
         stopped = client.post("/drone/stream/stop")
         assert stopped.status_code == 200
         assert stopped.json()["stream_active"] is False
+
+    def test_monitoring_start_refuses_mock_feed(self, client, monkeypatch):
+        _use_mock_drone(monkeypatch)
+
+        started = client.post("/monitoring/drone/start")
+
+        assert started.status_code == 403
+        assert "mock feed is disabled" in started.json()["detail"]
+
+    def test_monitoring_start_launches_tello_patrol(self, client, monkeypatch):
+        import time
+
+        fake = _FakeTelloController(battery=80, connected=True)
+        _install_fake_tello_service(monkeypatch, fake)
+
+        started = client.post("/monitoring/drone/start")
+
+        assert started.status_code == 200
+        data = started.json()
+        assert data["mode"] == "tello"
+        assert data["stream_active"] is True
+        assert data["demo_patrol_status"] == "running"
+
+        for _ in range(20):
+            if fake.demo_called:
+                break
+            time.sleep(0.01)
+        assert fake.demo_called is True
+
+    def test_tello_patrol_holds_position_then_lands(self):
+        from src.drone.tello_controller import TelloDroneController
+
+        class FakeTelloHardware:
+            def __init__(self):
+                self.commands = []
+
+            def takeoff(self):
+                self.commands.append("takeoff")
+
+            def send_rc_control(self, left_right, forward_back, up_down, yaw):
+                self.commands.append((left_right, forward_back, up_down, yaw))
+
+            def land(self):
+                self.commands.append("land")
+
+        hardware = FakeTelloHardware()
+        controller = TelloDroneController()
+        controller._tello = hardware
+        controller.connected = True
+
+        route = controller.demo_patrol(
+            move_cm=100,
+            up_cm=50,
+            hover_seconds=0,
+            delay_seconds=0,
+        )
+
+        assert route == ["takeoff", "hover 0s", "land"]
+        assert "move_up" not in hardware.commands
+        assert "move_left" not in hardware.commands
+        assert hardware.commands[1] == (0, 0, 0, 0)
+        assert all(
+            command == (0, 0, 0, 0)
+            for command in hardware.commands
+            if isinstance(command, tuple)
+        )
+        assert (0, 0, 0, 0) in hardware.commands
+
+    def test_drone_snapshot_annotation_draws_detection_box(self):
+        import numpy as np
+
+        from src.drone.service import DroneService
+
+        frame = np.zeros((80, 80, 3), dtype=np.uint8)
+        annotated = DroneService()._draw_detections(
+            frame,
+            [{"label": "fire", "confidence": 0.9, "bbox": [10, 10, 50, 50]}],
+        )
+
+        assert np.any(annotated != frame)
 
     def test_demo_patrol_endpoint_mock_succeeds(self, client):
         r = client.post(
@@ -349,11 +517,7 @@ class TestOperatorDroneLayer:
         assert "Mock demo patrol completed" in data["message"]
         assert data["route"] == [
             "takeoff",
-            "up 50",
-            "forward 100",
-            "right 100",
-            "back 100",
-            "left 100",
+            "hover 0s",
             "land",
         ]
 
@@ -393,6 +557,25 @@ class TestOperatorDroneLayer:
         assert "Operator confirmation" in data["message"]
         assert fake.demo_called is False
         assert settings.CLASS_THRESHOLD == 35
+
+    def test_demo_patrol_disconnected_tello_warns_without_connecting(
+        self, client, monkeypatch
+    ):
+        fake = _FakeTelloController(battery=80, connected=False)
+        _install_fake_tello_service(monkeypatch, fake)
+
+        r = client.post(
+            "/drone/demo-patrol",
+            json={"mode": "tello", "operator_confirmed": True},
+        )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["ok"] is False
+        assert data["status"] == "blocked"
+        assert "No drone is connected" in data["message"]
+        assert fake.connect_called is False
+        assert fake.demo_called is False
 
     def test_demo_patrol_low_battery_blocks_real_route(self, client, monkeypatch):
         fake = _FakeTelloController(battery=10, connected=True)
@@ -434,6 +617,7 @@ class TestOperatorDroneLayer:
         from configs import settings
         from src.drone.service import reset_drone_service_for_tests
 
+        monkeypatch.setattr(settings, "DRONE_MODE", "mock")
         monkeypatch.setattr(settings, "DRONE_ALLOW_MANUAL_CONTROL", True)
         reset_drone_service_for_tests()
 
@@ -484,7 +668,7 @@ class TestOperatorDroneLayer:
         patrol = client.get("/drone/patrol/state")
         assert patrol.status_code == 200
         assert patrol.json()["patrol_recommended"] is True
-        assert patrol.json()["physical_launch_allowed"] is False
+        assert patrol.json()["physical_launch_allowed"] is True
 
         status = client.get("/drone/status").json()
         assert status["connected"] is False

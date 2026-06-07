@@ -35,7 +35,13 @@ class DroneController(Protocol):
     def manual_command(self, command: str) -> DroneStatus:
         ...
 
-    def demo_patrol(self, move_cm: int, up_cm: int, delay_seconds: float) -> list[str]:
+    def demo_patrol(
+        self,
+        move_cm: int,
+        up_cm: int,
+        hover_seconds: float,
+        delay_seconds: float,
+    ) -> list[str]:
         ...
 
     def emergency_stop(self) -> DroneStatus:

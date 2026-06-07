@@ -92,19 +92,23 @@ class MockDroneController:
         self.last_command = command
         return self.get_status()
 
-    def demo_patrol(self, move_cm: int, up_cm: int, delay_seconds: float) -> list[str]:
+    def demo_patrol(
+        self,
+        move_cm: int,
+        up_cm: int,
+        hover_seconds: float,
+        delay_seconds: float,
+    ) -> list[str]:
         self.connected = True
         self.last_error = None
         route = [
             "takeoff",
-            f"up {up_cm}",
-            f"forward {move_cm}",
-            f"right {move_cm}",
-            f"back {move_cm}",
-            f"left {move_cm}",
+            f"hover {hover_seconds:g}s",
             "land",
         ]
         self.last_command = "demo_patrol"
+        if hover_seconds > 0:
+            time.sleep(hover_seconds)
         return route
 
     def emergency_stop(self) -> DroneStatus:

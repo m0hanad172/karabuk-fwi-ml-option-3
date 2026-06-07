@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   Camera,
   Clock,
@@ -13,9 +12,7 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StatusToast, type StatusToastState } from "@/components/ui/status-toast";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { formatIstanbulTime } from "@/lib/time";
@@ -33,41 +30,9 @@ export function LiveOverview() {
   const w = weather.data;
   const p = latest.data;
   const isHighRisk = p?.high_risk_flag === 1;
-  const [demoBusy, setDemoBusy] = useState(false);
-  const [demoToast, setDemoToast] = useState<StatusToastState | null>(null);
-
-  async function runDemoPatrol() {
-    if (
-      !window.confirm(
-        "Run controlled drone demo patrol? Physical launch requires operator confirmation.",
-      )
-    ) {
-      return;
-    }
-    setDemoBusy(true);
-    try {
-      const mode = droneStatus.data?.mode === "tello" ? "tello" : "mock";
-      const result = await api.runDemoPatrol(mode, true);
-      setDemoToast({
-        title: "Demo Patrol",
-        tone: result.ok ? "success" : "warning",
-        message: result.message,
-      });
-    } catch (e) {
-      setDemoToast({
-        title: "Demo Patrol",
-        tone: "danger",
-        message: (e as Error).message,
-      });
-    } finally {
-      setDemoBusy(false);
-    }
-  }
 
   return (
     <div className="space-y-3">
-      <StatusToast toast={demoToast} onClose={() => setDemoToast(null)} />
-
       <CompactTopSummary
         weatherLoading={weather.loading}
         weatherError={weather.error}
@@ -102,8 +67,6 @@ export function LiveOverview() {
           reason={dronePolicy.data?.reason}
           loading={!dronePolicy.data && !dronePolicy.error}
           error={dronePolicy.error}
-          onRunDemo={runDemoPatrol}
-          demoBusy={demoBusy}
         />
         <MonitoringStatusPanel
           cameras={cameras.data?.cameras ?? []}
@@ -417,8 +380,6 @@ function DroneReadyStrip({
   reason,
   loading,
   error,
-  onRunDemo,
-  demoBusy,
 }: {
   active: boolean;
   status?: string;
@@ -426,8 +387,6 @@ function DroneReadyStrip({
   reason?: string;
   loading: boolean;
   error: string | null;
-  onRunDemo: () => void;
-  demoBusy: boolean;
 }) {
   return (
     <div className="ent-card p-4">
@@ -465,15 +424,6 @@ function DroneReadyStrip({
           {reason}
         </p>
       )}
-      <Button
-        type="button"
-        size="sm"
-        onClick={onRunDemo}
-        disabled={demoBusy}
-        className="mt-3 h-7 w-full px-3 text-[11px]"
-      >
-        {demoBusy ? "Running..." : "Run Demo Patrol"}
-      </Button>
     </div>
   );
 }

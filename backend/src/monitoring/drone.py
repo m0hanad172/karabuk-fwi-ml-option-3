@@ -12,11 +12,8 @@ from src.drone.service import get_drone_service
 
 
 def start_drone() -> dict:
-    """Start the operator-controlled drone/video stream.
-
-    This never implies physical takeoff.
-    """
-    return get_drone_service().start_stream()
+    """Start the real drone feed and controlled patrol cycle."""
+    return get_drone_service().start_feed_patrol()
 
 
 def stop_drone() -> dict:

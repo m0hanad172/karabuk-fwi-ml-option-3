@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatusToast, type StatusToastState } from "@/components/ui/status-toast";
 import { useApi } from "@/hooks/use-api";
 import {
   api,
@@ -69,9 +70,9 @@ export function MonitoringDrone() {
           style={{ background: "var(--secondary)" }}
         />
         <span>
-          <span className="font-semibold">Drone-ready Prototype.</span>{" "}
-          Current demo uses operator-controlled drone movement. High Risk
-          prepares patrol; it does not auto-launch hardware. For the durable
+          <span className="font-semibold">Drone Operations.</span>{" "}
+          Operator-controlled Tello patrol and fire detection share the live
+          drone stream. For the durable
           alert record, see the <span className="font-medium">Detection Alerts</span> tab.
         </span>
       </div>
@@ -80,13 +81,13 @@ export function MonitoringDrone() {
       <div className="ent-card p-5">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
           <div>
-            <p className="ent-eyebrow">Operator-controlled Demo</p>
+            <p className="ent-eyebrow">Operator-controlled Drone</p>
             <h3 className="font-display text-lg font-semibold leading-none mt-1 flex items-center gap-2">
               <Plane className="h-4 w-4" style={{ color: "var(--primary)" }} />
-              Drone-ready Prototype
+              Drone Operations
             </h3>
             <p className="text-xs text-muted-foreground mt-1">
-              Physical drone launch requires operator confirmation.
+              Physical drone launch is tied to the operator Start feed action.
             </p>
           </div>
           {p && (
@@ -481,6 +482,7 @@ function DroneFeedCard() {
   const [status, setStatus] = useState<DroneMonitoringStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<StatusToastState | null>(null);
   // Optimistic running state — flipped immediately on click, reconciled on
   // the next status poll. This removes the 5 s "feels dead" gap between
   // pressing Start and seeing the feed image mount.
@@ -517,9 +519,35 @@ function DroneFeedCard() {
       setStatus(s);
       setOptimisticRunning(null);
       setError(null);
+      if (!wasRunning) {
+        if (!s.running) {
+          const message =
+            s.last_error ||
+            "No drone is connected. Connect the Tello first, then start the feed.";
+          setError(message);
+          setToast({
+            title: "Drone Feed",
+            tone: "warning",
+            message,
+          });
+        } else {
+          setToast({
+            title: "Drone Feed",
+            tone: "success",
+            message: "Drone feed started. Controlled patrol is running.",
+          });
+        }
+      }
     } catch (e) {
       setOptimisticRunning(null);
-      setError((e as Error).message);
+      const message = apiErrorMessage(e);
+      setError(message);
+      setToast({
+        title: "Drone Feed",
+        tone: "danger",
+        role: "alert",
+        message,
+      });
     } finally {
       setBusy(false);
     }
@@ -548,9 +576,11 @@ function DroneFeedCard() {
     : "Offline";
 
   return (
-    <FeedCard
-      title="Drone Camera"
-      subtitle={
+    <>
+      <StatusToast toast={toast} onClose={() => setToast(null)} />
+      <FeedCard
+        title="Drone Camera"
+        subtitle={
         `${modeLabel} mode · ${hwAvailable
           ? status?.battery != null
             ? `Battery ${status.battery}%`
@@ -558,17 +588,17 @@ function DroneFeedCard() {
           : "Hardware unavailable"
         }`
       }
-      icon={<Plane className="h-4 w-4" />}
-      feedPath="/monitoring/drone/feed"
-      running={running}
-      onToggle={toggle}
-      busy={busy}
-      disabled={!hwAvailable}
-      error={error || status?.last_error || null}
-      detectionCount={status?.detection_count ?? 0}
-      captureFps={status?.capture_fps}
-      inferenceFps={status?.inference_fps}
-      extraAction={
+        icon={<Plane className="h-4 w-4" />}
+        feedPath="/monitoring/drone/feed"
+        running={running}
+        onToggle={toggle}
+        busy={busy}
+        disabled={!hwAvailable}
+        error={error || status?.last_error || null}
+        detectionCount={status?.detection_count ?? 0}
+        captureFps={status?.capture_fps}
+        inferenceFps={status?.inference_fps}
+        extraAction={
         <Button
           size="sm"
           variant="outline"
@@ -579,7 +609,8 @@ function DroneFeedCard() {
           Emergency Stop
         </Button>
       }
-    />
+      />
+    </>
   );
 }
 
@@ -678,6 +709,12 @@ function cameraUnavailableCopy(runtime?: MonitoringRuntime | null): string {
     return "Camera is unavailable in Docker. For webcam monitoring, run the backend locally or configure Docker device passthrough.";
   }
   return "Camera is unavailable in this runtime. Check device connection, permissions, or run the backend locally for webcam monitoring.";
+}
+
+function apiErrorMessage(error: unknown): string {
+  const message = (error as Error)?.message || "Drone feed request failed.";
+  const detail = message.match(/"detail"\s*:\s*"([^"]+)"/);
+  return detail?.[1] ?? message;
 }
 
 // ---------- Shared feed card -----------------------------------------------

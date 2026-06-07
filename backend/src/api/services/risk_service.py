@@ -42,6 +42,15 @@ def execute_risk_check(
     # Only operational runs may update the live drone policy state.
     if is_operational(result.get("run_type")):
         set_system_state("latest_drone_state", result.get("drone_state", {}))
+        if _should_run_probability_patrol(result, allow_drone_trigger):
+            from src.drone.service import get_drone_service
+
+            result["drone_patrol_result"] = (
+                get_drone_service().maybe_run_probability_patrol(
+                    result,
+                    allow_drone_trigger=allow_drone_trigger,
+                )
+            )
 
     return result
 
@@ -54,3 +63,23 @@ def get_latest_prediction() -> dict | None:
     appear as the live Latest Model Result on the dashboard.
     """
     return get_latest_run(operational_only=True)
+
+
+def _should_run_probability_patrol(
+    result: dict,
+    allow_drone_trigger: bool,
+) -> bool:
+    if not allow_drone_trigger or not result.get("high_risk_flag"):
+        return False
+    try:
+        probability = float(result.get("high_risk_probability"))
+    except (TypeError, ValueError):
+        return False
+
+    thresholds = result.get("thresholds") or {}
+    threshold = thresholds.get("probability_threshold")
+    if threshold is None:
+        from configs.settings import DEFAULT_PROBABILITY_THRESHOLD
+
+        threshold = DEFAULT_PROBABILITY_THRESHOLD
+    return probability >= float(threshold)

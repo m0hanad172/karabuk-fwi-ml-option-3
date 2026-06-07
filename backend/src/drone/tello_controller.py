@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 
-from configs.settings import DRONE_DEFAULT_STATION_ID
+from configs import settings
 from src.drone.models import DroneStatus
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,12 @@ class TelloDroneController:
             return self.get_status()
         try:
             if self._tello is None:
-                self._tello = Tello()
+                Tello.RESPONSE_TIMEOUT = settings.DRONE_COMMAND_TIMEOUT_SECONDS
+                self._tello = Tello(
+                    host=settings.TELLO_IP,
+                    retry_count=1,
+                    vs_udp=settings.TELLO_VIDEO_PORT,
+                )
             self._tello.connect()
             self.battery = int(self._tello.get_battery())
             self.connected = True
@@ -104,7 +109,7 @@ class TelloDroneController:
             battery=self.battery,
             last_error=self.last_error,
             emergency_stopped=self.emergency_stopped,
-            station_id=DRONE_DEFAULT_STATION_ID,
+            station_id=settings.DRONE_DEFAULT_STATION_ID,
         )
 
     def get_frame(self):
@@ -126,7 +131,13 @@ class TelloDroneController:
         self.last_error = f"Manual command '{command}' is not implemented for Tello"
         return self.get_status()
 
-    def demo_patrol(self, move_cm: int, up_cm: int, delay_seconds: float) -> list[str]:
+    def demo_patrol(
+        self,
+        move_cm: int,
+        up_cm: int,
+        hover_seconds: float,
+        delay_seconds: float,
+    ) -> list[str]:
         """Run the short controlled Tello demo patrol after service gates pass.
 
         Edit this function to change the controlled Tello demo patrol path.
@@ -135,35 +146,66 @@ class TelloDroneController:
         if self._tello is None or not self.connected:
             raise RuntimeError("Tello is not connected")
 
-        route: list[tuple[str, tuple[int, ...]]] = [
-            ("takeoff", ()),
-            ("move_up", (up_cm,)),
-            ("move_forward", (move_cm,)),
-            ("move_right", (move_cm,)),
-            ("move_back", (move_cm,)),
-            ("move_left", (move_cm,)),
-            ("land", ()),
-        ]
         executed: list[str] = []
+        airborne = False
+        landing_started = False
         try:
-            for command, args in route:
-                getattr(self._tello, command)(*args)
-                executed.append(
-                    command if not args else f"{command} {args[0]}cm"
-                )
-                time.sleep(delay_seconds)
+            self._tello.takeoff()
+            airborne = True
+            executed.append("takeoff")
+
+            # Tello takeoff already rises to roughly the requested half-meter.
+            # Avoid extra movement commands here; repeated zero RC commands
+            # begin immediately after takeoff to avoid first-second drift.
+            self._hold_position(delay_seconds)
+
+            # Keep holding position during the requested airborne window.
+            executed.append(f"hover {hover_seconds:g}s")
+            self._hold_position(hover_seconds)
+
+            landing_started = True
+            self._land_safely(executed)
+            airborne = False
         except Exception as e:  # noqa: BLE001
             self.last_error = f"Tello demo patrol failed: {e}"
             logger.warning(self.last_error)
+            if airborne and not landing_started:
+                try:
+                    self._land_safely(executed, label="land_after_error")
+                except Exception as land_error:  # noqa: BLE001
+                    logger.warning("Tello land after demo failure failed: %s", land_error)
+            raise
+        return executed
+
+    def _send_zero_velocity(self) -> None:
+        if self._tello is None:
+            return
+        try:
+            self._tello.send_rc_control(0, 0, 0, 0)
+        except Exception as e:  # noqa: BLE001
+            logger.debug("Tello zero-velocity command skipped: %s", e)
+
+    def _hold_position(self, seconds: float) -> None:
+        end = time.time() + max(seconds, 0.0)
+        self._send_zero_velocity()
+        while time.time() < end:
+            time.sleep(min(0.1, max(end - time.time(), 0.0)))
+            self._send_zero_velocity()
+
+    def _land_safely(self, executed: list[str], label: str = "land") -> None:
+        last_error: Exception | None = None
+        self._send_zero_velocity()
+        time.sleep(0.3)
+        for attempt in range(2):
             try:
                 self._tello.land()
-                executed.append("land_after_error")
-            except Exception as land_error:  # noqa: BLE001
-                logger.warning("Tello land after demo failure failed: %s", land_error)
-            raise
-        finally:
-            self.stream_active = False
-        return executed
+                executed.append(label if attempt == 0 else f"{label}_retry")
+                return
+            except Exception as e:  # noqa: BLE001
+                last_error = e
+                logger.warning("Tello land attempt %s failed: %s", attempt + 1, e)
+                time.sleep(0.8)
+        raise RuntimeError(f"Tello landing failed: {last_error}")
 
     def emergency_stop(self) -> DroneStatus:
         if self._tello is not None and self.connected:
