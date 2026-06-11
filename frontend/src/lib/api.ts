@@ -303,6 +303,14 @@ export const api = {
     fetchApi<DroneMonitoringStatus>("/monitoring/drone/stop", { method: "POST" }),
   emergencyStopDrone: () =>
     fetchApi<DroneMonitoringStatus>("/drone/emergency-stop", { method: "POST" }),
+  sendManualDroneCommand: (command: string, operatorConfirmed = true) =>
+    fetchApi<DroneMonitoringStatus>("/drone/manual-command", {
+      method: "POST",
+      body: JSON.stringify({
+        command,
+        operator_confirmed: operatorConfirmed,
+      }),
+    }),
   runDemoPatrol: (mode: "mock" | "tello", operatorConfirmed: boolean) =>
     fetchApi<DroneDemoPatrolResponse>("/drone/demo-patrol", {
       method: "POST",

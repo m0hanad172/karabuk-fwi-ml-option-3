@@ -42,6 +42,7 @@ class DroneService:
         self._demo_status = "idle"
         self._demo_last_message: str | None = None
         self._patrol_thread: threading.Thread | None = None
+        self._patrol_stop_event = threading.Event()
 
     def _build_controller(self, mode: str) -> DroneController:
         if mode == "tello":
@@ -106,6 +107,7 @@ class DroneService:
 
             self._demo_status = "running"
             self._demo_last_message = "Controlled drone patrol running"
+            self._patrol_stop_event = threading.Event()
             self._patrol_thread = threading.Thread(
                 target=self._feed_patrol_loop,
                 daemon=True,
@@ -116,6 +118,25 @@ class DroneService:
         return self._decorate(self.controller.get_status())
 
     def stop_stream(self) -> dict:
+        patrol_thread = self._request_patrol_stop()
+        if (
+            patrol_thread is not None
+            and patrol_thread is not threading.current_thread()
+        ):
+            patrol_thread.join(timeout=settings.DRONE_COMMAND_TIMEOUT_SECONDS + 5)
+        return self._stop_video_stream()
+
+    def _request_patrol_stop(self) -> threading.Thread | None:
+        with self._lock:
+            patrol_thread = self._patrol_thread
+            if patrol_thread is not None and patrol_thread.is_alive():
+                self._demo_status = "landing"
+                self._demo_last_message = "Stop feed requested; landing drone"
+                self._patrol_stop_event.set()
+                return patrol_thread
+        return None
+
+    def _stop_video_stream(self) -> dict:
         with self._lock:
             self._stream_requested = False
             status = self.controller.stop_stream()
@@ -159,6 +180,7 @@ class DroneService:
                 settings.DRONE_DEMO_UP_CM,
                 settings.DRONE_DEMO_HOVER_SECONDS,
                 settings.DRONE_DEMO_COMMAND_DELAY_SECONDS,
+                stop_event=self._patrol_stop_event,
             )
         except Exception as e:  # noqa: BLE001
             with self._lock:
@@ -173,7 +195,7 @@ class DroneService:
                 )
         finally:
             try:
-                self.stop_stream()
+                self._stop_video_stream()
             except Exception as e:  # noqa: BLE001
                 logger.warning("Could not stop drone stream after patrol: %s", e)
 

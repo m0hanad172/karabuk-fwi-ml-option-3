@@ -12,7 +12,7 @@ import {
   Wand2,
   Webcam,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -489,6 +489,8 @@ function DroneFeedCard() {
   const [optimisticRunning, setOptimisticRunning] = useState<boolean | null>(
     null,
   );
+  const keyboardBusyRef = useRef(false);
+  const lastKeyboardAtRef = useRef(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -570,10 +572,66 @@ function DroneFeedCard() {
 
   const running =
     optimisticRunning !== null ? optimisticRunning : !!status?.running;
+  const keyboardEnabled =
+    running &&
+    status?.mode === "tello" &&
+    status?.manual_control_enabled !== false;
   const hwAvailable = status?.hardware_available ?? true;
   const modeLabel = status?.mode
     ? status.mode.charAt(0).toUpperCase() + status.mode.slice(1)
     : "Offline";
+
+  const sendKeyboardCommand = useCallback(async (command: string) => {
+    const now = Date.now();
+    if (keyboardBusyRef.current || now - lastKeyboardAtRef.current < 180) {
+      return;
+    }
+
+    keyboardBusyRef.current = true;
+    lastKeyboardAtRef.current = now;
+    try {
+      const s = await api.sendManualDroneCommand(command, true);
+      setStatus(s);
+      if (s.last_error) {
+        setError(s.last_error);
+        setToast({
+          title: "Drone Keyboard",
+          tone: "warning",
+          message: s.last_error,
+        });
+      } else {
+        setError(null);
+      }
+    } catch (e) {
+      const message = apiErrorMessage(e);
+      setError(message);
+      setToast({
+        title: "Drone Keyboard",
+        tone: "danger",
+        role: "alert",
+        message,
+      });
+    } finally {
+      keyboardBusyRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!keyboardEnabled) return;
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (isEditableTarget(event.target)) return;
+
+      const command = arrowCommand(event.key);
+      if (!command) return;
+
+      event.preventDefault();
+      void sendKeyboardCommand(command);
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [keyboardEnabled, sendKeyboardCommand]);
 
   return (
     <>
@@ -715,6 +773,27 @@ function apiErrorMessage(error: unknown): string {
   const message = (error as Error)?.message || "Drone feed request failed.";
   const detail = message.match(/"detail"\s*:\s*"([^"]+)"/);
   return detail?.[1] ?? message;
+}
+
+function arrowCommand(key: string): string | null {
+  switch (key) {
+    case "ArrowUp":
+      return "forward";
+    case "ArrowDown":
+      return "back";
+    case "ArrowLeft":
+      return "left";
+    case "ArrowRight":
+      return "right";
+    default:
+      return null;
+  }
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
+  return tag === "input" || tag === "textarea" || target.isContentEditable;
 }
 
 // ---------- Shared feed card -----------------------------------------------

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from typing import Any, Protocol
 
 from src.drone.models import DroneStatus
@@ -41,6 +42,7 @@ class DroneController(Protocol):
         up_cm: int,
         hover_seconds: float,
         delay_seconds: float,
+        stop_event: threading.Event | None = None,
     ) -> list[str]:
         ...
 

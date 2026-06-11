@@ -350,10 +350,12 @@ class _FakeTelloController:
         up_cm: int,
         hover_seconds: float,
         delay_seconds: float,
+        stop_event=None,
     ):
         self.demo_called = True
         return [
             "takeoff",
+            f"move_up {up_cm}cm",
             f"hover {hover_seconds:g}s",
             "land",
         ]
@@ -452,6 +454,48 @@ class TestOperatorDroneLayer:
             time.sleep(0.01)
         assert fake.demo_called is True
 
+    def test_stop_feed_interrupts_patrol_and_lands(self, client, monkeypatch):
+        import threading
+        import time
+
+        class SlowLandingController(_FakeTelloController):
+            def __init__(self):
+                super().__init__(battery=80, connected=True)
+                self.demo_started = threading.Event()
+                self.landed = False
+
+            def demo_patrol(
+                self,
+                move_cm,
+                up_cm,
+                hover_seconds,
+                delay_seconds,
+                stop_event=None,
+            ):
+                self.demo_called = True
+                self.demo_started.set()
+                if stop_event is not None:
+                    stop_event.wait(2)
+                self.landed = True
+                return ["takeoff", f"move_up {up_cm}cm", "land"]
+
+        fake = SlowLandingController()
+        _install_fake_tello_service(monkeypatch, fake)
+
+        started = client.post("/monitoring/drone/start")
+        assert started.status_code == 200
+        assert fake.demo_started.wait(1)
+
+        stopped = client.post("/monitoring/drone/stop")
+
+        assert stopped.status_code == 200
+        assert stopped.json()["stream_active"] is False
+        for _ in range(20):
+            if fake.landed:
+                break
+            time.sleep(0.01)
+        assert fake.landed is True
+
     def test_tello_patrol_holds_position_then_lands(self):
         from src.drone.tello_controller import TelloDroneController
 
@@ -461,6 +505,9 @@ class TestOperatorDroneLayer:
 
             def takeoff(self):
                 self.commands.append("takeoff")
+
+            def move_up(self, distance):
+                self.commands.append(f"move_up {distance}cm")
 
             def send_rc_control(self, left_right, forward_back, up_down, yaw):
                 self.commands.append((left_right, forward_back, up_down, yaw))
@@ -475,13 +522,13 @@ class TestOperatorDroneLayer:
 
         route = controller.demo_patrol(
             move_cm=100,
-            up_cm=50,
+            up_cm=20,
             hover_seconds=0,
             delay_seconds=0,
         )
 
-        assert route == ["takeoff", "hover 0s", "land"]
-        assert "move_up" not in hardware.commands
+        assert route == ["takeoff", "move_up 20cm", "hover 0s", "land"]
+        assert "move_up 20cm" in hardware.commands
         assert "move_left" not in hardware.commands
         assert hardware.commands[1] == (0, 0, 0, 0)
         assert all(
@@ -517,6 +564,7 @@ class TestOperatorDroneLayer:
         assert "Mock demo patrol completed" in data["message"]
         assert data["route"] == [
             "takeoff",
+            "up 20",
             "hover 0s",
             "land",
         ]
@@ -609,7 +657,13 @@ class TestOperatorDroneLayer:
         assert after == before
         assert settings.CLASS_THRESHOLD == 35
 
-    def test_manual_command_blocked_when_disabled(self, client):
+    def test_manual_command_blocked_when_disabled(self, client, monkeypatch):
+        from configs import settings
+        from src.drone.service import reset_drone_service_for_tests
+
+        monkeypatch.setattr(settings, "DRONE_ALLOW_MANUAL_CONTROL", False)
+        reset_drone_service_for_tests()
+
         r = client.post("/drone/manual-command", json={"command": "forward"})
         assert r.status_code == 403
 
@@ -624,6 +678,29 @@ class TestOperatorDroneLayer:
         r = client.post("/drone/manual-command", json={"command": "forward"})
         assert r.status_code == 200
         assert r.json()["mode"] == "mock"
+
+    def test_tello_manual_arrow_command_sends_small_pulse(self, monkeypatch):
+        from configs import settings
+        from src.drone.tello_controller import TelloDroneController
+
+        class FakeTelloHardware:
+            def __init__(self):
+                self.commands = []
+
+            def send_rc_control(self, left_right, forward_back, up_down, yaw):
+                self.commands.append((left_right, forward_back, up_down, yaw))
+
+        hardware = FakeTelloHardware()
+        controller = TelloDroneController()
+        controller._tello = hardware
+        controller.connected = True
+        monkeypatch.setattr(settings, "DRONE_KEYBOARD_CONTROL_SPEED", 20)
+        monkeypatch.setattr(settings, "DRONE_KEYBOARD_PULSE_SECONDS", 0.0)
+
+        status = controller.manual_command("forward")
+
+        assert status.last_error is None
+        assert hardware.commands == [(0, 20, 0, 0), (0, 0, 0, 0)]
 
     def test_auto_takeoff_requires_extra_safety_flags(self, client, monkeypatch):
         from configs import settings

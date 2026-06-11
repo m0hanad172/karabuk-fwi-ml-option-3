@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 
 from configs import settings
@@ -27,6 +28,7 @@ class TelloDroneController:
         self.last_error: str | None = None
         self.emergency_stopped = False
         self.hardware_available = True
+        self._manual_override_until = 0.0
 
     def _import_tello(self):
         try:
@@ -125,10 +127,34 @@ class TelloDroneController:
         return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
     def manual_command(self, command: str) -> DroneStatus:
-        # Directional flight is intentionally not implemented here. Real
-        # operator movement should remain with the drone controller app until
-        # a full safety review defines command semantics.
-        self.last_error = f"Manual command '{command}' is not implemented for Tello"
+        if self._tello is None or not self.connected:
+            self.last_error = "Tello is not connected"
+            return self.get_status()
+
+        speed = max(1, min(settings.DRONE_KEYBOARD_CONTROL_SPEED, 100))
+        vectors = {
+            "left": (-speed, 0, 0, 0),
+            "right": (speed, 0, 0, 0),
+            "forward": (0, speed, 0, 0),
+            "back": (0, -speed, 0, 0),
+            "stop": (0, 0, 0, 0),
+        }
+        vector = vectors.get(command)
+        if vector is None:
+            self.last_error = f"Manual command '{command}' is not supported"
+            return self.get_status()
+
+        try:
+            pulse_seconds = max(settings.DRONE_KEYBOARD_PULSE_SECONDS, 0.0)
+            self._manual_override_until = time.time() + pulse_seconds
+            self._tello.send_rc_control(*vector)
+            if command != "stop" and pulse_seconds > 0:
+                time.sleep(pulse_seconds)
+            self._send_zero_velocity(force=True)
+            self.last_error = None
+        except Exception as e:  # noqa: BLE001
+            self.last_error = f"Tello manual command failed: {e}"
+            logger.warning(self.last_error)
         return self.get_status()
 
     def demo_patrol(
@@ -137,6 +163,7 @@ class TelloDroneController:
         up_cm: int,
         hover_seconds: float,
         delay_seconds: float,
+        stop_event: threading.Event | None = None,
     ) -> list[str]:
         """Run the short controlled Tello demo patrol after service gates pass.
 
@@ -150,6 +177,10 @@ class TelloDroneController:
         airborne = False
         landing_started = False
         try:
+            if stop_event is not None and stop_event.is_set():
+                executed.append("cancelled_before_takeoff")
+                return executed
+
             self._tello.takeoff()
             airborne = True
             executed.append("takeoff")
@@ -157,11 +188,16 @@ class TelloDroneController:
             # Tello takeoff already rises to roughly the requested half-meter.
             # Avoid extra movement commands here; repeated zero RC commands
             # begin immediately after takeoff to avoid first-second drift.
-            self._hold_position(delay_seconds)
+            self._hold_position(delay_seconds, stop_event=stop_event)
+
+            if up_cm > 0 and not self._stop_requested(stop_event):
+                self._tello.move_up(up_cm)
+                executed.append(f"move_up {up_cm}cm")
+                self._hold_position(delay_seconds, stop_event=stop_event)
 
             # Keep holding position during the requested airborne window.
             executed.append(f"hover {hover_seconds:g}s")
-            self._hold_position(hover_seconds)
+            self._hold_position(hover_seconds, stop_event=stop_event)
 
             landing_started = True
             self._land_safely(executed)
@@ -177,24 +213,35 @@ class TelloDroneController:
             raise
         return executed
 
-    def _send_zero_velocity(self) -> None:
+    def _send_zero_velocity(self, force: bool = False) -> None:
         if self._tello is None:
+            return
+        if not force and time.time() < self._manual_override_until:
             return
         try:
             self._tello.send_rc_control(0, 0, 0, 0)
         except Exception as e:  # noqa: BLE001
             logger.debug("Tello zero-velocity command skipped: %s", e)
 
-    def _hold_position(self, seconds: float) -> None:
+    def _stop_requested(self, stop_event: threading.Event | None) -> bool:
+        return bool(stop_event is not None and stop_event.is_set())
+
+    def _hold_position(
+        self,
+        seconds: float,
+        stop_event: threading.Event | None = None,
+    ) -> None:
         end = time.time() + max(seconds, 0.0)
-        self._send_zero_velocity()
+        self._send_zero_velocity(force=True)
         while time.time() < end:
+            if self._stop_requested(stop_event):
+                return
             time.sleep(min(0.1, max(end - time.time(), 0.0)))
             self._send_zero_velocity()
 
     def _land_safely(self, executed: list[str], label: str = "land") -> None:
         last_error: Exception | None = None
-        self._send_zero_velocity()
+        self._send_zero_velocity(force=True)
         time.sleep(0.3)
         for attempt in range(2):
             try:

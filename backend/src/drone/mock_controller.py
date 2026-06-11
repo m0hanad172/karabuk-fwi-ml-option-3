@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 
 from configs.settings import DRONE_DEFAULT_STATION_ID
@@ -98,17 +99,22 @@ class MockDroneController:
         up_cm: int,
         hover_seconds: float,
         delay_seconds: float,
+        stop_event: threading.Event | None = None,
     ) -> list[str]:
         self.connected = True
         self.last_error = None
         route = [
             "takeoff",
+            f"up {up_cm}",
             f"hover {hover_seconds:g}s",
             "land",
         ]
         self.last_command = "demo_patrol"
         if hover_seconds > 0:
-            time.sleep(hover_seconds)
+            if stop_event is None:
+                time.sleep(hover_seconds)
+            else:
+                stop_event.wait(hover_seconds)
         return route
 
     def emergency_stop(self) -> DroneStatus:
